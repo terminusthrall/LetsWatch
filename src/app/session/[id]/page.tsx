@@ -1,0 +1,365 @@
+'use client';
+
+import { useCallback, useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
+import {
+  SwipeDeck,
+  type SwipeMedia,
+  type SwipeDirection,
+} from '@/modules/swiping/SwipeDeck';
+
+type SessionStatus = 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED';
+
+type SessionResponse = {
+  session: {
+    id: string;
+    title: string;
+    status: SessionStatus;
+    deadlineAt: string;
+    finalWinningMediaId: string | null;
+  };
+  mediaPool: Array<{
+    id: string;
+    tmdbId: string;
+    mediaType: string;
+    title: string;
+    posterPath: string | null;
+    releaseYear: string | null;
+    overview: string | null;
+    isMatched: boolean;
+  }>;
+  matches: string[];
+  participantCount: number;
+  redisState: unknown;
+  userId: string;
+};
+
+type JoinSessionResponse = {
+  sessionId: string;
+  userId: string;
+  title: string;
+  status: string;
+  deadlineAt: string;
+  participantCount: number;
+};
+
+type SwipeResponse = {
+  success: boolean;
+  matchFound: boolean;
+  matchedMedia?: {
+    id: string;
+    title: string;
+    posterPath: string | null;
+  };
+};
+
+function MatchToast({
+  title,
+  onClose,
+}: {
+  title: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 6000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed top-4 left-1/2 z-50 w-[90%] max-w-md -translate-x-1/2 animate-in fade-in slide-in-from-top-2">
+      <div className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-500/30 bg-emerald-500 px-5 py-4 text-white shadow-lg shadow-emerald-500/30">
+        <div>
+          <p className="font-bold">It's a match!</p>
+          <p className="text-sm opacity-90">Everyone liked {title}</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full p-1 hover:bg-emerald-600"
+          aria-label="Dismiss match"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function SessionRoomPage() {
+  const params = useParams();
+  const id = typeof params.id === 'string' ? params.id : '';
+
+  const [session, setSession] = useState<SessionResponse | null>(null);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [needsJoin, setNeedsJoin] = useState(false);
+
+  const [joinDisplayName, setJoinDisplayName] = useState('');
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
+
+  const [toast, setToast] = useState<{ mediaId: string; title: string } | null>(
+    null
+  );
+
+  const fetchSession = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!id) return;
+
+      try {
+        const res = await fetch(`/api/sessions/${id}`, {
+          credentials: 'same-origin',
+        });
+
+        if (res.status === 401) {
+          setNeedsJoin(true);
+          setSession(null);
+          if (!options?.silent) {
+            setIsInitialLoading(false);
+          }
+          return;
+        }
+
+        if (!res.ok) {
+          const data = (await res.json()) as { error?: string };
+          throw new Error(data.error || 'Failed to load session');
+        }
+
+        const data = (await res.json()) as SessionResponse;
+        setSession(data);
+        setNeedsJoin(false);
+        setError(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+      } finally {
+        if (!options?.silent) {
+          setIsInitialLoading(false);
+        }
+      }
+    },
+    [id]
+  );
+
+  useEffect(() => {
+    if (!id) return;
+
+    fetchSession({ silent: false });
+
+    const interval = setInterval(() => {
+      fetchSession({ silent: true });
+    }, 5000);
+
+    return () => clearInterval(interval);
+  }, [id, fetchSession]);
+
+  const handleJoin = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setJoinError(null);
+
+    const displayName = joinDisplayName.trim();
+    if (!displayName) {
+      setJoinError('Display name is required.');
+      return;
+    }
+
+    setIsJoining(true);
+
+    try {
+      const res = await fetch(`/api/sessions/${id}/join`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ displayName }),
+      });
+
+      const data = (await res.json()) as JoinSessionResponse | { error?: string };
+
+      if (!res.ok) {
+        const message =
+          'error' in data && typeof data.error === 'string'
+            ? data.error
+            : 'Failed to join session';
+        setJoinError(message);
+        return;
+      }
+
+      setJoinDisplayName('');
+      await fetchSession({ silent: false });
+    } catch (err) {
+      setJoinError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setIsJoining(false);
+    }
+  };
+
+  const handleVote = useCallback(
+    async (mediaId: string, direction: SwipeDirection) => {
+      if (!id || !session?.userId) return;
+
+      try {
+        const res = await fetch(`/api/sessions/${id}/swipe`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: session.userId,
+            mediaId,
+            vote: direction,
+          }),
+        });
+
+        const data = (await res.json()) as SwipeResponse;
+
+        if (!res.ok) {
+          console.error('Swipe failed', data);
+          return;
+        }
+
+        if (data.matchFound) {
+          const title =
+            session.mediaPool.find((m) => m.id === mediaId)?.title ??
+            data.matchedMedia?.title ??
+            'this title';
+          setToast({ mediaId, title });
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    },
+    [id, session]
+  );
+
+  if (!id) {
+    return (
+      <main className="flex min-h-full flex-1 items-center justify-center px-6">
+        <p className="text-zinc-600 dark:text-zinc-400">Invalid session link.</p>
+      </main>
+    );
+  }
+
+  if (isInitialLoading) {
+    return (
+      <main className="flex min-h-full flex-1 items-center justify-center px-6">
+        <p className="text-zinc-600 dark:text-zinc-400">Loading session...</p>
+      </main>
+    );
+  }
+
+  if (error && !session) {
+    return (
+      <main className="flex min-h-full flex-1 flex-col items-center justify-center gap-4 px-6">
+        <p className="text-center text-red-600 dark:text-red-400">{error}</p>
+        <button
+          type="button"
+          onClick={() => fetchSession({ silent: false })}
+          className="rounded-xl bg-zinc-900 px-5 py-2 text-sm font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
+        >
+          Try again
+        </button>
+      </main>
+    );
+  }
+
+  return (
+    <main className="flex min-h-full flex-1 flex-col items-center px-4 py-6">
+      {toast && (
+        <MatchToast title={toast.title} onClose={() => setToast(null)} />
+      )}
+
+      {needsJoin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6">
+          <form
+            onSubmit={handleJoin}
+            className="w-full max-w-sm rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <h2 className="mb-2 text-xl font-bold text-zinc-900 dark:text-zinc-50">
+              Join session
+            </h2>
+            <p className="mb-4 text-sm text-zinc-600 dark:text-zinc-400">
+              Enter a display name to start swiping.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <label
+                htmlFor="joinDisplayName"
+                className="text-sm font-semibold text-zinc-700 dark:text-zinc-300"
+              >
+                Display name
+              </label>
+              <input
+                id="joinDisplayName"
+                type="text"
+                value={joinDisplayName}
+                onChange={(e) => setJoinDisplayName(e.target.value)}
+                placeholder="e.g. Alex"
+                maxLength={50}
+                required
+                className="rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900 placeholder-zinc-400 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              />
+            </div>
+
+            {joinError && (
+              <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-900/30 dark:text-red-200">
+                {joinError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={isJoining}
+              className="mt-5 w-full rounded-xl bg-emerald-500 px-5 py-3 font-semibold text-white shadow-md shadow-emerald-500/30 transition hover:bg-emerald-600 disabled:opacity-60"
+            >
+              {isJoining ? 'Joining...' : 'Join Session'}
+            </button>
+          </form>
+        </div>
+      )}
+
+      {session && (
+        <>
+          <header className="mb-6 w-full max-w-3xl">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
+                  {session.session.title}
+                </h1>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400">
+                  {session.participantCount} participant
+                  {session.participantCount === 1 ? '' : 's'} · ends{' '}
+                  {new Date(session.session.deadlineAt).toLocaleString()}
+                </p>
+              </div>
+              <span className="mt-2 inline-flex w-fit items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 sm:mt-0">
+                {session.session.status.replace(/_/g, ' ')}
+              </span>
+            </div>
+          </header>
+
+          {session.session.status === 'SWIPING_ACTIVE' ? (
+            <SwipeDeck
+              items={session.mediaPool.map(
+                (media): SwipeMedia => ({
+                  id: media.id,
+                  title: media.title,
+                  releaseYear: media.releaseYear ?? undefined,
+                  overview: media.overview ?? 'No overview available.',
+                  posterPath: media.posterPath,
+                })
+              )}
+              onVote={handleVote}
+              onEmpty={() => {}}
+              emptyMessage="You've swiped through the deck. Wait for the results!"
+            />
+          ) : (
+            <div className="flex w-full max-w-md flex-col items-center rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+              <p className="text-lg font-medium text-zinc-700 dark:text-zinc-200">
+                This session is no longer accepting swipes.
+              </p>
+              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                Status: {session.session.status.replace(/_/g, ' ')}
+              </p>
+            </div>
+          )}
+        </>
+      )}
+    </main>
+  );
+}

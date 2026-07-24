@@ -7,7 +7,7 @@ import { addSessionParticipant, setSessionState } from '@/modules/redis';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { displayName, title, deadlineHours } = body;
+    const { displayName, title, deadlineHours, mediaType, genreIds } = body;
 
     // Validate input
     if (!displayName) {
@@ -35,34 +35,74 @@ export async function POST(request: NextRequest) {
       deadlineAt,
     });
 
-    // Fetch trending movies from TMDB to seed the session
-    const trendingMovies = await discoverMovies({ sort_by: 'popularity.desc', page: 1 });
-    const trendingTV = await discoverTV({ sort_by: 'popularity.desc', page: 1 });
+    // Build TMDB discover filters
+    const withGenres =
+      Array.isArray(genreIds) && genreIds.length > 0
+        ? genreIds.join(',')
+        : undefined;
 
-    // Insert movies into session media
-    const movieRecords = trendingMovies.results.slice(0, 10).map((movie: TMDBMovie) => ({
-      id: crypto.randomUUID(),
-      sessionId,
-      ...mapMovieToSessionMedia(movie),
-    }));
-    
-    await db.insert(sessionMedia).values(movieRecords);
+    let records: Array<{
+      id: string;
+      sessionId: string;
+      tmdbId: string;
+      mediaType: string;
+      title: string;
+      posterPath: string | null;
+      releaseYear: string;
+      overview: string;
+    }> = [];
 
-    // Insert TV shows into session media
-    const tvRecords = trendingTV.results.slice(0, 5).map((tv: TMDBTV) => ({
-      id: crypto.randomUUID(),
-      sessionId,
-      ...mapTVToSessionMedia(tv),
-    }));
-    
-    await db.insert(sessionMedia).values(tvRecords);
+    if (mediaType === 'tv') {
+      const tv = await discoverTV({
+        sort_by: 'popularity.desc',
+        page: 1,
+        with_genres: withGenres,
+      });
+      records = tv.results.slice(0, 15).map((item: TMDBTV) => ({
+        id: crypto.randomUUID(),
+        sessionId,
+        ...mapTVToSessionMedia(item),
+      }));
+    } else if (mediaType === 'movie' || !mediaType) {
+      const movies = await discoverMovies({
+        sort_by: 'popularity.desc',
+        page: 1,
+        with_genres: withGenres,
+      });
+      records = movies.results.slice(0, 15).map((movie: TMDBMovie) => ({
+        id: crypto.randomUUID(),
+        sessionId,
+        ...mapMovieToSessionMedia(movie),
+      }));
+    } else {
+      const [trendingMovies, trendingTV] = await Promise.all([
+        discoverMovies({ sort_by: 'popularity.desc', page: 1, with_genres: withGenres }),
+        discoverTV({ sort_by: 'popularity.desc', page: 1, with_genres: withGenres }),
+      ]);
+      records = [
+        ...trendingMovies.results.slice(0, 10).map((movie: TMDBMovie) => ({
+          id: crypto.randomUUID(),
+          sessionId,
+          ...mapMovieToSessionMedia(movie),
+        })),
+        ...trendingTV.results.slice(0, 5).map((tv: TMDBTV) => ({
+          id: crypto.randomUUID(),
+          sessionId,
+          ...mapTVToSessionMedia(tv),
+        })),
+      ];
+    }
+
+    if (records.length > 0) {
+      await db.insert(sessionMedia).values(records);
+    }
 
     // Set up Redis state
     await addSessionParticipant(sessionId, userId);
     await setSessionState(sessionId, {
       status: 'SWIPING_ACTIVE',
       participantCount: 1,
-      mediaCount: movieRecords.length + tvRecords.length,
+      mediaCount: records.length,
     });
 
     // Set cookie with user and session info
