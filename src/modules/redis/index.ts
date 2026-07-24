@@ -14,6 +14,7 @@ const SESSION_PREFIX = 'session:';
 const SESSION_LOCK_PREFIX = 'session_lock:';
 const SESSION_PARTICIPANTS_PREFIX = 'session_participants:';
 const SESSION_MATCHES_PREFIX = 'session_matches:';
+const SESSION_MEDIA_LIKES_PREFIX = 'session_media_likes:';
 
 /**
  * Acquire a distributed lock for a session
@@ -84,6 +85,15 @@ export async function getSessionParticipants(sessionId: string): Promise<string[
 }
 
 /**
+ * Get participant count for a session
+ * @param sessionId - The session ID
+ */
+export async function getParticipantCount(sessionId: string): Promise<number> {
+  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
+  return await redis.scard(participantsKey);
+}
+
+/**
  * Remove participant from session
  * @param sessionId - The session ID
  * @param userId - The user ID
@@ -115,6 +125,68 @@ export async function getSessionMatches(sessionId: string): Promise<string[]> {
 }
 
 /**
+ * Increment like count for a media item in a session
+ * @param sessionId - The session ID
+ * @param mediaId - The media ID
+ * @param ttl - Time to live in seconds (default: 3600)
+ * @returns The new like count
+ */
+export async function incrementMediaLike(sessionId: string, mediaId: string, ttl: number = 3600): Promise<number> {
+  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
+  const result = await redis.incr(likesKey);
+  await redis.expire(likesKey, ttl);
+  return result;
+}
+
+/**
+ * Get like count for a media item in a session
+ * @param sessionId - The session ID
+ * @param mediaId - The media ID
+ */
+export async function getMediaLikeCount(sessionId: string, mediaId: string): Promise<number> {
+  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
+  const count = await redis.get(likesKey);
+  return count ? parseInt(count as string, 10) : 0;
+}
+
+/**
+ * Reset like count for a media item in a session
+ * @param sessionId - The session ID
+ * @param mediaId - The media ID
+ */
+export async function resetMediaLikeCount(sessionId: string, mediaId: string): Promise<void> {
+  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
+  await redis.del(likesKey);
+}
+
+/**
+ * Acquire atomic evaluation lock for session
+ * @param sessionId - The session ID
+ * @param ttl - Time to live in seconds (default: 10)
+ * @returns true if lock acquired, false otherwise
+ */
+export async function acquireEvaluationLock(sessionId: string, ttl: number = 10): Promise<boolean> {
+  const lockKey = `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`;
+  const lockValue = `${Date.now()}`;
+  
+  const result = await redis.set(lockKey, lockValue, {
+    nx: true,
+    ex: ttl,
+  });
+  
+  return result === 'OK';
+}
+
+/**
+ * Release atomic evaluation lock for session
+ * @param sessionId - The session ID
+ */
+export async function releaseEvaluationLock(sessionId: string): Promise<void> {
+  const lockKey = `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`;
+  await redis.del(lockKey);
+}
+
+/**
  * Clear all session data from Redis
  * @param sessionId - The session ID
  */
@@ -122,6 +194,7 @@ export async function clearSessionData(sessionId: string): Promise<void> {
   const keys = [
     `${SESSION_PREFIX}${sessionId}`,
     `${SESSION_LOCK_PREFIX}${sessionId}`,
+    `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`,
     `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`,
     `${SESSION_MATCHES_PREFIX}${sessionId}`,
   ];
