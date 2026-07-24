@@ -95,6 +95,47 @@ export async function discoverTV(options: {
   return await response.json();
 }
 
+export interface TMDBMovieDetails extends TMDBMovie {
+  runtime?: number;
+  genres?: Array<{ id: number; name: string }>;
+  status?: string;
+}
+
+export interface TMDBTVDetails extends TMDBTV {
+  number_of_seasons?: number;
+  genres?: Array<{ id: number; name: string }>;
+  status?: string;
+}
+
+export async function getMovieDetails(tmdbId: string): Promise<TMDBMovieDetails> {
+  const params = buildBaseParams();
+  const response = await fetch(`${TMDB_BASE_URL}/movie/${tmdbId}?${params}`);
+
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+export async function getTVDetails(tmdbId: string): Promise<TMDBTVDetails> {
+  const params = buildBaseParams();
+  const response = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}?${params}`);
+
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.statusText}`);
+  }
+
+  return await response.json();
+}
+
+export function getMediaDetails(
+  mediaType: string,
+  tmdbId: string
+): Promise<TMDBMovieDetails | TMDBTVDetails> {
+  return mediaType === 'tv' ? getTVDetails(tmdbId) : getMovieDetails(tmdbId);
+}
+
 export function getPosterUrl(path: string | null, size: string = 'w342'): string | null {
   if (!path) return null;
   return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;

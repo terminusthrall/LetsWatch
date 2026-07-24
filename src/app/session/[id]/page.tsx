@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import PairwiseVote from '@/modules/head-to-head/PairwiseVote';
+import WinnerView from '@/modules/sessions/WinnerView';
 import {
   SwipeDeck,
   type SwipeMedia,
@@ -32,6 +34,23 @@ type SessionResponse = {
   participantCount: number;
   redisState: unknown;
   userId: string;
+  headToHeadVotes: Array<{
+    userId: string;
+    preferredMediaId: string;
+    opponentMediaId: string;
+  }>;
+  headToHeadStandings: Array<{ mediaId: string; wins: number }>;
+  winningMedia: {
+    id: string;
+    tmdbId: string;
+    mediaType: string;
+    title: string;
+    posterPath: string | null;
+    releaseYear: string | null;
+    overview: string | null;
+    voteAverage: number | null;
+    watchUrl: string;
+  } | null;
 };
 
 type JoinSessionResponse = {
@@ -333,31 +352,99 @@ export default function SessionRoomPage() {
             </div>
           </header>
 
-          {session.session.status === 'SWIPING_ACTIVE' ? (
-            <SwipeDeck
-              items={session.mediaPool.map(
-                (media): SwipeMedia => ({
-                  id: media.id,
-                  title: media.title,
-                  releaseYear: media.releaseYear ?? undefined,
-                  overview: media.overview ?? 'No overview available.',
-                  posterPath: media.posterPath,
-                })
-              )}
-              onVote={handleVote}
-              onEmpty={() => {}}
-              emptyMessage="You've swiped through the deck. Wait for the results!"
-            />
-          ) : (
-            <div className="flex w-full max-w-md flex-col items-center rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-              <p className="text-lg font-medium text-zinc-700 dark:text-zinc-200">
-                This session is no longer accepting swipes.
-              </p>
-              <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                Status: {session.session.status.replace(/_/g, ' ')}
-              </p>
-            </div>
-          )}
+          {(() => {
+            const matchedItems = session.mediaPool.filter(
+              (m) =>
+                session.matches.includes(m.id) ||
+                (m.isMatched && session.matches.length === 0)
+            );
+
+            if (
+              session.session.status === 'COMPLETED' ||
+              session.session.finalWinningMediaId
+            ) {
+              const fallbackMedia = session.session.finalWinningMediaId
+                ? session.mediaPool.find(
+                    (m) => m.id === session.session.finalWinningMediaId
+                  ) ?? null
+                : null;
+
+              const winner = session.winningMedia ??
+                (fallbackMedia
+                  ? {
+                      id: fallbackMedia.id,
+                      tmdbId: fallbackMedia.tmdbId,
+                      mediaType: fallbackMedia.mediaType,
+                      title: fallbackMedia.title,
+                      posterPath: fallbackMedia.posterPath,
+                      releaseYear: fallbackMedia.releaseYear,
+                      overview: fallbackMedia.overview,
+                      voteAverage: null,
+                      watchUrl: `https://www.justwatch.com/us/search?q=${encodeURIComponent(fallbackMedia.title)}`,
+                    }
+                  : null);
+
+              return winner ? (
+                <WinnerView media={winner} />
+              ) : (
+                <div className="flex w-full max-w-md flex-col items-center rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-lg font-medium text-zinc-700 dark:text-zinc-200">
+                    No winner selected.
+                  </p>
+                </div>
+              );
+            }
+
+            if (
+              session.session.status === 'HEAD_TO_HEAD_ACTIVE' ||
+              matchedItems.length > 1
+            ) {
+              return matchedItems.length >= 2 ? (
+                <PairwiseVote
+                  sessionId={id}
+                  userId={session.userId}
+                  items={matchedItems.map((m) => ({
+                    id: m.id,
+                    tmdbId: m.tmdbId,
+                    mediaType: m.mediaType,
+                    title: m.title,
+                    posterPath: m.posterPath,
+                    releaseYear: m.releaseYear,
+                    overview: m.overview,
+                  }))}
+                  myVotes={session.headToHeadVotes.filter(
+                    (v) => v.userId === session.userId
+                  )}
+                  standings={session.headToHeadStandings}
+                  participantCount={session.participantCount}
+                  onVoteSubmitted={() => fetchSession({ silent: false })}
+                />
+              ) : (
+                <div className="flex w-full max-w-md flex-col items-center rounded-3xl border border-zinc-200 bg-white p-8 text-center shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+                  <p className="text-lg font-medium text-zinc-700 dark:text-zinc-200">
+                    Waiting for the tie-breaker pool.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <SwipeDeck
+                items={session.mediaPool.map(
+                  (media): SwipeMedia => ({
+                    id: media.id,
+                    title: media.title,
+                    releaseYear: media.releaseYear ?? undefined,
+                    overview: media.overview ?? 'No overview available.',
+                    posterPath: media.posterPath,
+                  })
+                )}
+                onVote={handleVote}
+                onEmpty={() => {}}
+                emptyMessage="You've swiped through the deck. Wait for the results!"
+              />
+            );
+          })()}
         </>
       )}
     </main>
