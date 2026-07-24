@@ -1,4 +1,6 @@
-import { pgTable, uuid, varchar, timestamp, integer, pgEnum, primaryKey, index } from 'drizzle-orm/pg-core';  
+import { pgTable, uuid, varchar, timestamp, integer, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
+import { z } from 'zod';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
 export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'COMPLETED']);  
@@ -19,7 +21,9 @@ export const accounts = pgTable('accounts', {
   provider: varchar('provider', { length: 50 }).notNull(), // 'google' | 'apple' | 'email'
   providerAccountId: varchar('provider_account_id', { length: 255 }).notNull(),
   createdAt: timestamp('created_at').defaultNow().notNull(),
-});
+}, (table) => [
+  index('idx_accounts_user_id').on(table.userId),
+]);
 
 // 2. Swiping Sessions
 export const sessions = pgTable('sessions', {  
@@ -30,7 +34,9 @@ export const sessions = pgTable('sessions', {
   finalWinningMediaId: varchar('final_winning_media_id', { length: 50 }),  
   deadlineAt: timestamp('deadline_at').notNull(),  
   createdAt: timestamp('created_at').defaultNow().notNull(),  
-});  
+}, (table) => [
+  index('idx_sessions_host_id').on(table.hostId),
+]);  
 
 // 3. Session Media Pool
 export const sessionMedia = pgTable('session_media', {  
@@ -44,7 +50,10 @@ export const sessionMedia = pgTable('session_media', {
   overview: varchar('overview', { length: 1000 }),  
   isMatched: integer('is_matched').default(0).notNull(), // 1 when unanimous match occurs  
   addedAt: timestamp('added_at').defaultNow().notNull(),  
-});  
+}, (table) => [
+  index('idx_session_media_session_id').on(table.sessionId),
+  uniqueIndex('uniq_session_tmdb').on(table.sessionId, table.tmdbId),
+]);  
 
 // 4. Swipes & Head-to-Head Votes
 export const swipes = pgTable('swipes', {  
@@ -54,7 +63,10 @@ export const swipes = pgTable('swipes', {
   mediaId: uuid('media_id').references(() => sessionMedia.id, { onDelete: 'cascade' }).notNull(),  
   vote: voteEnum('vote').notNull(),  
   createdAt: timestamp('created_at').defaultNow().notNull(),  
-});  
+}, (table) => [
+  index('idx_swipes_session_user').on(table.sessionId, table.userId),
+  uniqueIndex('uniq_user_swipe').on(table.sessionId, table.userId, table.mediaId),
+]);  
 
 export const headToHeadVotes = pgTable('head_to_head_votes', {  
   id: uuid('id').primaryKey().defaultRandom(),  
@@ -63,4 +75,16 @@ export const headToHeadVotes = pgTable('head_to_head_votes', {
   preferredMediaId: uuid('preferred_media_id').references(() => sessionMedia.id, { onDelete: 'cascade' }).notNull(),  
   opponentMediaId: uuid('opponent_media_id').references(() => sessionMedia.id, { onDelete: 'cascade' }).notNull(),  
   createdAt: timestamp('created_at').defaultNow().notNull(),  
-});
+}, (table) => [
+  index('idx_h2h_session_user').on(table.sessionId, table.userId),
+]);
+
+// 5. Zod Validation Contracts for API Boundaries
+export const insertUserSchema = createInsertSchema(users);
+export const selectUserSchema = createSelectSchema(users);
+
+export const insertSessionSchema = createInsertSchema(sessions);
+export const selectSessionSchema = createSelectSchema(sessions);
+
+export const insertSwipeSchema = createInsertSchema(swipes);
+export const selectSwipeSchema = createSelectSchema(swipes);
