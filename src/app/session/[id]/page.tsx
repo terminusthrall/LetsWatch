@@ -218,8 +218,8 @@ export default function SessionRoomPage() {
         const res = await fetch(`/api/sessions/${id}/swipe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
           body: JSON.stringify({
-            userId: session.userId,
             mediaId,
             vote: direction,
           }),

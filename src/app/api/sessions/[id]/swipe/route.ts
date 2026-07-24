@@ -8,7 +8,8 @@ import {
   getParticipantCount, 
   addSessionMatch,
   acquireEvaluationLock,
-  releaseEvaluationLock
+  releaseEvaluationLock,
+  getSessionParticipants,
 } from '@/modules/redis';
 
 export async function POST(
@@ -17,11 +18,43 @@ export async function POST(
 ) {
   try {
     const sessionId = params.id;
+
+    // Authenticate participant via cookie
+    const cookie = request.cookies.get('user_session')?.value;
+    if (!cookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let userId: string;
+    let cookieSessionId: string;
+    try {
+      const parsed = JSON.parse(cookie) as { userId?: unknown; sessionId?: unknown };
+      if (
+        typeof parsed.userId !== 'string' ||
+        typeof parsed.sessionId !== 'string'
+      ) {
+        throw new Error('Invalid cookie');
+      }
+      userId = parsed.userId;
+      cookieSessionId = parsed.sessionId;
+    } catch {
+      return NextResponse.json({ error: 'Invalid session cookie' }, { status: 401 });
+    }
+
+    if (cookieSessionId !== sessionId) {
+      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
+    }
+
+    const participants = await getSessionParticipants(sessionId);
+    if (!participants.includes(userId)) {
+      return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
+    }
+
     const body = await request.json();
-    const { userId, mediaId, vote } = body;
+    const { mediaId, vote } = body;
 
     // Validate input
-    if (!userId || !mediaId || !vote) {
+    if (!mediaId || !vote) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
