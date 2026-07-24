@@ -3,16 +3,29 @@ import { db } from '@/db';
 import { users, sessions, sessionMedia } from '@/db/schema';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
 import { addSessionParticipant, setSessionState } from '@/modules/redis';
+import { z } from 'zod';
+
+const createSessionBodySchema = z.object({
+  displayName: z.string().min(1).max(50),
+  title: z.string().max(100).optional(),
+  deadlineHours: z.coerce.number().int().min(1).max(168).optional().default(24),
+  mediaType: z.string().optional(),
+  genreIds: z.array(z.number().int()).optional(),
+});
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { displayName, title, deadlineHours, mediaType, genreIds } = body;
+    const parsed = createSessionBodySchema.safeParse(body);
 
-    // Validate input
-    if (!displayName) {
-      return NextResponse.json({ error: 'Display name is required' }, { status: 400 });
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues.map((i) => i.message).join(', ') },
+        { status: 400 }
+      );
     }
+
+    const { displayName, title, deadlineHours, mediaType, genreIds } = parsed.data;
 
     // Create ephemeral user
     const userId = crypto.randomUUID();
@@ -25,7 +38,7 @@ export async function POST(request: NextRequest) {
 
     // Create session
     const sessionId = crypto.randomUUID();
-    const deadlineAt = new Date(Date.now() + (deadlineHours || 24) * 60 * 60 * 1000);
+    const deadlineAt = new Date(Date.now() + deadlineHours * 60 * 60 * 1000);
     
     await db.insert(sessions).values({
       id: sessionId,
