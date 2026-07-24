@@ -1,19 +1,38 @@
 import { Redis } from '@upstash/redis';
-
-if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-  throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables are required');
-}
+import { requireEnv } from '@/lib/env';
 
 const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+  url: requireEnv('UPSTASH_REDIS_REST_URL'),
+  token: requireEnv('UPSTASH_REDIS_REST_TOKEN'),
 });
 
+const DEFAULT_TTL_SECONDS = 3600;
+const DEFAULT_LOCK_TTL_SECONDS = 30;
+
 // Session State Engine Keys
-const SESSION_PREFIX = 'session:';
-const SESSION_LOCK_PREFIX = 'session_lock:';
-const SESSION_PARTICIPANTS_PREFIX = 'session_participants:';
-const SESSION_MATCHES_PREFIX = 'session_matches:';
+const SESSION_KEY_PREFIXES = {
+  state: 'session:',
+  lock: 'session_lock:',
+  participants: 'session_participants:',
+  matches: 'session_matches:',
+} as const;
+
+type SessionKeyKind = keyof typeof SESSION_KEY_PREFIXES;
+
+const sessionKey = (kind: SessionKeyKind, sessionId: string) =>
+  `${SESSION_KEY_PREFIXES[kind]}${sessionId}`;
+
+/** Add a member to a session set and refresh its expiry. */
+async function addToSessionSet(
+  kind: SessionKeyKind,
+  sessionId: string,
+  member: string,
+  ttl: number,
+): Promise<void> {
+  const key = sessionKey(kind, sessionId);
+  await redis.sadd(key, member);
+  await redis.expire(key, ttl);
+}
 
 /**
  * Acquire a distributed lock for a session
@@ -21,15 +40,15 @@ const SESSION_MATCHES_PREFIX = 'session_matches:';
  * @param ttl - Time to live in seconds (default: 30)
  * @returns true if lock acquired, false otherwise
  */
-export async function acquireSessionLock(sessionId: string, ttl: number = 30): Promise<boolean> {
-  const lockKey = `${SESSION_LOCK_PREFIX}${sessionId}`;
-  const lockValue = `${Date.now()}`;
-  
-  const result = await redis.set(lockKey, lockValue, {
+export async function acquireSessionLock(
+  sessionId: string,
+  ttl: number = DEFAULT_LOCK_TTL_SECONDS,
+): Promise<boolean> {
+  const result = await redis.set(sessionKey('lock', sessionId), `${Date.now()}`, {
     nx: true,
     ex: ttl,
   });
-  
+
   return result === 'OK';
 }
 
@@ -38,8 +57,7 @@ export async function acquireSessionLock(sessionId: string, ttl: number = 30): P
  * @param sessionId - The session ID to unlock
  */
 export async function releaseSessionLock(sessionId: string): Promise<void> {
-  const lockKey = `${SESSION_LOCK_PREFIX}${sessionId}`;
-  await redis.del(lockKey);
+  await redis.del(sessionKey('lock', sessionId));
 }
 
 /**
@@ -47,8 +65,7 @@ export async function releaseSessionLock(sessionId: string): Promise<void> {
  * @param sessionId - The session ID
  */
 export async function getSessionState(sessionId: string) {
-  const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  return await redis.get(stateKey);
+  return await redis.get(sessionKey('state', sessionId));
 }
 
 /**
@@ -57,9 +74,12 @@ export async function getSessionState(sessionId: string) {
  * @param state - The session state object
  * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function setSessionState(sessionId: string, state: any, ttl: number = 3600): Promise<void> {
-  const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  await redis.set(stateKey, JSON.stringify(state), { ex: ttl });
+export async function setSessionState(
+  sessionId: string,
+  state: unknown,
+  ttl: number = DEFAULT_TTL_SECONDS,
+): Promise<void> {
+  await redis.set(sessionKey('state', sessionId), JSON.stringify(state), { ex: ttl });
 }
 
 /**
@@ -68,10 +88,12 @@ export async function setSessionState(sessionId: string, state: any, ttl: number
  * @param userId - The user ID
  * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function addSessionParticipant(sessionId: string, userId: string, ttl: number = 3600): Promise<void> {
-  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
-  await redis.sadd(participantsKey, userId);
-  await redis.expire(participantsKey, ttl);
+export async function addSessionParticipant(
+  sessionId: string,
+  userId: string,
+  ttl: number = DEFAULT_TTL_SECONDS,
+): Promise<void> {
+  await addToSessionSet('participants', sessionId, userId, ttl);
 }
 
 /**
@@ -79,8 +101,7 @@ export async function addSessionParticipant(sessionId: string, userId: string, t
  * @param sessionId - The session ID
  */
 export async function getSessionParticipants(sessionId: string): Promise<string[]> {
-  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
-  return await redis.smembers(participantsKey);
+  return await redis.smembers(sessionKey('participants', sessionId));
 }
 
 /**
@@ -89,8 +110,7 @@ export async function getSessionParticipants(sessionId: string): Promise<string[
  * @param userId - The user ID
  */
 export async function removeSessionParticipant(sessionId: string, userId: string): Promise<void> {
-  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
-  await redis.srem(participantsKey, userId);
+  await redis.srem(sessionKey('participants', sessionId), userId);
 }
 
 /**
@@ -99,10 +119,12 @@ export async function removeSessionParticipant(sessionId: string, userId: string
  * @param mediaId - The media ID
  * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function addSessionMatch(sessionId: string, mediaId: string, ttl: number = 3600): Promise<void> {
-  const matchesKey = `${SESSION_MATCHES_PREFIX}${sessionId}`;
-  await redis.sadd(matchesKey, mediaId);
-  await redis.expire(matchesKey, ttl);
+export async function addSessionMatch(
+  sessionId: string,
+  mediaId: string,
+  ttl: number = DEFAULT_TTL_SECONDS,
+): Promise<void> {
+  await addToSessionSet('matches', sessionId, mediaId, ttl);
 }
 
 /**
@@ -110,8 +132,7 @@ export async function addSessionMatch(sessionId: string, mediaId: string, ttl: n
  * @param sessionId - The session ID
  */
 export async function getSessionMatches(sessionId: string): Promise<string[]> {
-  const matchesKey = `${SESSION_MATCHES_PREFIX}${sessionId}`;
-  return await redis.smembers(matchesKey);
+  return await redis.smembers(sessionKey('matches', sessionId));
 }
 
 /**
@@ -119,13 +140,10 @@ export async function getSessionMatches(sessionId: string): Promise<string[]> {
  * @param sessionId - The session ID
  */
 export async function clearSessionData(sessionId: string): Promise<void> {
-  const keys = [
-    `${SESSION_PREFIX}${sessionId}`,
-    `${SESSION_LOCK_PREFIX}${sessionId}`,
-    `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`,
-    `${SESSION_MATCHES_PREFIX}${sessionId}`,
-  ];
-  
+  const keys = (Object.keys(SESSION_KEY_PREFIXES) as SessionKeyKind[]).map((kind) =>
+    sessionKey(kind, sessionId),
+  );
+
   await redis.del(...keys);
 }
 
