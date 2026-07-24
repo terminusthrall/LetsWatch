@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { sessions, sessionMedia } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { getSessionState, getSessionMatches, getParticipantCount } from '@/modules/redis';
+import {
+  getSessionState,
+  getSessionMatches,
+  getParticipantCount,
+  getSessionParticipants,
+} from '@/modules/redis';
 
 export async function GET(
   request: NextRequest,
@@ -10,6 +15,37 @@ export async function GET(
 ) {
   try {
     const sessionId = params.id;
+
+    // Verify participant authentication
+    const cookie = request.cookies.get('user_session')?.value;
+    if (!cookie) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    let userId: string;
+    let cookieSessionId: string;
+    try {
+      const parsed = JSON.parse(cookie) as { userId?: unknown; sessionId?: unknown };
+      if (!parsed || typeof parsed !== 'object') {
+        throw new Error('Invalid cookie');
+      }
+      if (typeof parsed.userId !== 'string' || typeof parsed.sessionId !== 'string') {
+        throw new Error('Invalid cookie');
+      }
+      userId = parsed.userId;
+      cookieSessionId = parsed.sessionId;
+    } catch {
+      return NextResponse.json({ error: 'Invalid session cookie' }, { status: 401 });
+    }
+
+    if (cookieSessionId !== sessionId) {
+      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
+    }
+
+    const participants = await getSessionParticipants(sessionId);
+    if (!participants.includes(userId)) {
+      return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
+    }
 
     // Get session from database
     const session = await db.query.sessions.findFirst({
@@ -52,6 +88,7 @@ export async function GET(
       matches,
       participantCount,
       redisState,
+      userId,
     });
   } catch (error) {
     console.error('Error fetching session:', error);
