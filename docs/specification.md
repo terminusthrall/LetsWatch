@@ -135,3 +135,148 @@ export const headToHeadVotes = pgTable('head_to_head_votes', {
   createdAt: timestamp('created_at').defaultNow().notNull(),  
 });
 ```
+5.3 Session State Engine, Distributed Locks & Redis Architecture (src/modules/redis/)
+To guarantee real-time, non-blocking swipe evaluation without subjecting the primary PostgreSQL database to read/write lock contention during concurrent swiping bursts, an HTTP-compatible Upstash Redis caching layer is positioned in front of Drizzle ORM.
+5.3.1 Key-Value Data Structures & Naming Conventions
+Active Participant Set (session:{sessionId}:participants)
+Data Type: Redis Set (SADD / SMEMBERS)
+Payload: Set of userId strings actively joined to the session room.
+TTL: 24 hours from session creation.
+Purpose: Determines the dynamic participant denominator $N$ required to calculate a 100% unanimous match ($N = \text{total active participants}$).
+Swipe Counter Set (session:{sessionId}:media:{mediaId}:likes)
+Data Type: Redis Set (SADD)
+Payload: Set of userId strings who submitted a LIKE vote for a given mediaId.
+Purpose: Provides sub-millisecond atomic cardinality lookup (SCARD) to test if likes_count === active_participants_count.
+Session Evaluation Lock (lock:session:{sessionId}:evaluation)
+Data Type: String with TTL (SET NX EX 5)
+Payload: Request execution token.
+Purpose: Prevents race conditions during simultaneous swipe submissions across multiple clients when evaluating unanimous match conditions or state transitions (SWIPING_ACTIVE $\rightarrow$ HEAD_TO_HEAD_ACTIVE).
+Ephemeral Match Set (session:{sessionId}:matches)
+Data Type: Redis Set (SADD)
+Payload: Set of sessionMedia.id strings that achieved 100% group consensus during the swiping window.
+5.4 API Route Contracts & Business Logic Specification (src/app/api/)
+All HTTP endpoints strictly enforce Zod boundary validation on incoming request bodies, enforce privacy-compliant JWT auth, and return standard JSON error/success responses.
+5.4.1 POST /api/sessions — Session Initialization & Seeding
+Auth Requirement: Open (Creates Host Ephemeral Guest Account if unauthenticated).
+Request Payload (Zod Schema):
+TypeScript
+export const createSessionSchema = z.object({
+  displayName: z.string().min(1).max(50),
+  title: z.string().min(1).max(100).default('Movie Night'),
+  mediaType: z.enum(['movie', 'tv']).default('movie'),
+  genreIds: z.array(z.number()).optional(),
+  deadlineHours: z.number().min(1).max(72).default(24),
+});
+
+
+
+
+Execution Flow:
+Insert guest record into users table (isGuest: 1) if no valid session JWT cookie exists.
+Mint an HTTP-Only signed JWT containing userId.
+Insert record into sessions with status SWIPING_ACTIVE and calculated deadlineAt.
+Query TMDB API /discover/{mediaType} endpoint seeded by selected genres/trending lists to fetch seed items.
+Bulk insert titles into session_media and store host userId inside Redis set session:{sessionId}:participants.
+Response Payload (201 Created):
+JSON
+{
+  "sessionId": "uuid-v4-string",
+  "hostId": "uuid-v4-string",
+  "inviteUrl": "https://letswatch.app/session/uuid-v4-string",
+  "deadlineAt": "2026-07-25T00:00:00.000Z"
+}
+
+
+
+
+5.4.2 POST /api/sessions/[id]/join — Ephemeral Guest Access
+Auth Requirement: Open (Zero PII collected).
+Request Payload (Zod Schema):
+TypeScript
+export const joinSessionSchema = z.object({
+  displayName: z.string().min(1).max(50),
+});
+
+
+
+
+Execution Flow:
+Create ephemeral guest record in users (displayName, isGuest: 1).
+Mint HTTP-Only JWT storing userId and target sessionId.
+Add userId to Upstash Redis set session:{sessionId}:participants.
+Return session metadata and active media deck pool.
+5.4.3 POST /api/sessions/[id]/swipe — Atomic Swipe & Match Engine
+Auth Requirement: Valid Signed Session JWT (userId).
+Request Payload (Zod Schema):
+TypeScript
+export const submitSwipeSchema = z.object({
+  mediaId: z.string().uuid(),
+  vote: z.enum(['LIKE', 'PASS']),
+});
+
+
+
+
+Execution Flow:
+Idempotency Verification: Check swipes unique index (sessionId, userId, mediaId) to ensure single-vote compliance.
+Persist Swipe Decision: Asynchronously write swipe record (LIKE / PASS) to swipes table in PostgreSQL.
+Evaluate Consensus (If vote === "LIKE"):
+Add userId to Redis set session:{sessionId}:media:{mediaId}:likes.
+Acquire short Redis lock (lock:session:{id}:evaluation).
+Compare cardinality SCARD(likes) against total active participants SCARD(participants).
+If SCARD(likes) === SCARD(participants) (Unanimous Match):
+Update session_media.isMatched = 1 in PostgreSQL.
+Add mediaId to Redis set session:{sessionId}:matches.
+Flag response payload with matchFound: true and return media metadata for client-side toast notification.
+Release Redis Lock.
+Response Payload (200 OK):
+JSON
+{
+  "success": true,
+  "matchFound": true,
+  "matchedMedia": {
+    "id": "uuid-v4-string",
+    "title": "Inception",
+    "posterPath": "/ed21.jpg"
+  }
+}
+
+
+
+
+5.4.4 GET /api/sessions/[id] — State & Polling Endpoint
+Auth Requirement: Valid Session Participant JWT.
+Response Payload (200 OK):
+JSON
+{
+  "sessionId": "uuid-v4-string",
+  "status": "SWIPING_ACTIVE",
+  "activeParticipantsCount": 3,
+  "deadlineAt": "2026-07-25T00:00:00.000Z",
+  "mediaPool": [ ... ],
+  "matches": [ ... ],
+  "winningMedia": null
+}
+
+
+
+
+5.4.5 POST /api/sessions/[id]/head-to-head — Final Tie-Breaker Consensus
+Trigger: Invoked when session transitions to HEAD_TO_HEAD_ACTIVE (manual host trigger or deadline expiration with multiple matched items or zero unanimous matches).
+Request Payload (Zod Schema):
+TypeScript
+export const headToHeadVoteSchema = z.object({
+  preferredMediaId: z.string().uuid(),
+  opponentMediaId: z.string().uuid(),
+});
+
+
+
+
+Execution Flow:
+Record pair decision in head_to_head_votes table.
+Compute ranked-choice/pairwise win totals across all submitted participant votes.
+Upon final vote submission or deadline expiry:
+Set sessions.finalWinningMediaId = winningMediaId.
+Set sessions.status = "COMPLETED".
+Return winning title metadata along with JustWatch streaming referral badges.
