@@ -88,3 +88,22 @@ export const selectSessionSchema = createSelectSchema(sessions);
 
 export const insertSwipeSchema = createInsertSchema(swipes);
 export const selectSwipeSchema = createSelectSchema(swipes);
+
+// Client-facing payload schemas. The full insert schemas above accept
+// server-controlled columns (ids, entitlement flags, timestamps) and must never
+// be used to parse a request body directly.
+export const createUserPayloadSchema = insertUserSchema
+  .pick({ displayName: true, email: true })
+  .extend({
+    displayName: z.string().trim().min(1).max(50),
+    email: z.email().max(255).optional(),
+  })
+  .strict();
+
+export const createSessionPayloadSchema = insertSessionSchema
+  .pick({ title: true, deadlineAt: true })
+  .strict();
+
+export const createSwipePayloadSchema = insertSwipeSchema
+  .pick({ mediaId: true, vote: true })
+  .strict();
