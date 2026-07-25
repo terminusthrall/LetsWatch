@@ -29,7 +29,7 @@ type SessionResponse = {
   };
   mediaPool: Array<{
     id: string;
-    tmdbId: string;
+    tmdbId: string | null;
     mediaType: string;
     title: string;
     posterPath: string | null;

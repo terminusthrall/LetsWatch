@@ -44,8 +44,8 @@ export const sessions = pgTable('sessions', {
 export const sessionMedia = pgTable('session_media', {  
   id: uuid('id').primaryKey().defaultRandom(),  
   sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'cascade' }).notNull(),  
-  tmdbId: varchar('tmdb_id', { length: 50 }).notNull(),  
-  mediaType: varchar('media_type', { length: 10 }).notNull(), // 'movie' | 'tv'  
+  tmdbId: varchar('tmdb_id', { length: 50 }),  
+  mediaType: varchar('media_type', { length: 20 }).notNull(), // 'movie' | 'tv' | 'manual'  
   title: varchar('title', { length: 255 }).notNull(),  
   posterPath: varchar('poster_path', { length: 255 }),  
   releaseYear: varchar('release_year', { length: 10 }),  

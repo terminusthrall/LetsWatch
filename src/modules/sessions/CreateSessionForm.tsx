@@ -74,6 +74,7 @@ const POOL_TYPES = [
   { id: 'top_tv', label: 'Top TV Shows' },
   { id: 'sci_fi_action', label: 'Sci-Fi / Action' },
   { id: 'custom', label: 'Custom Search List' },
+  { id: 'host_titles', label: 'My Own Titles' },
 ];
 
 const DEADLINE_OPTIONS: { id: string; label: string }[] = [
@@ -124,6 +125,8 @@ export default function CreateSessionForm() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [customMedia, setCustomMedia] = useState<SearchResult[]>([]);
+  const [manualTitles, setManualTitles] = useState<string[]>([]);
+  const [manualInput, setManualInput] = useState('');
   const [deadlineOption, setDeadlineOption] = useState<string>('24h');
   const [customDeadline, setCustomDeadline] = useState<string>('');
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
@@ -184,13 +187,27 @@ export default function CreateSessionForm() {
     );
   };
 
-  const isCustomPool = initialPoolType === 'custom';
+  const addManualTitle = () => {
+    const trimmed = manualInput.trim();
+    if (!trimmed) return;
+    if (manualTitles.includes(trimmed)) return;
+    setManualTitles((prev) => [...prev, trimmed]);
+    setManualInput('');
+  };
+
+  const removeManualTitle = (index: number) => {
+    setManualTitles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const isCustomSearch = initialPoolType === 'custom';
+  const isHostTitles = initialPoolType === 'host_titles';
 
   const canSubmit = useMemo(() => {
     if (!displayName.trim() || !title.trim()) return false;
-    if (isCustomPool && customMedia.length === 0) return false;
+    if (isCustomSearch && customMedia.length === 0) return false;
+    if (isHostTitles && manualTitles.length === 0) return false;
     return true;
-  }, [displayName, title, isCustomPool, customMedia.length]);
+  }, [displayName, title, isCustomSearch, isHostTitles, customMedia.length, manualTitles.length]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -212,7 +229,7 @@ export default function CreateSessionForm() {
       initialPoolType,
     };
 
-    if (isCustomPool) {
+    if (isCustomSearch) {
       body.customMedia = customMedia.map((m) => ({
         tmdbId: m.tmdbId,
         mediaType: m.mediaType,
@@ -220,6 +237,15 @@ export default function CreateSessionForm() {
         posterPath: m.posterPath,
         releaseYear: m.releaseYear,
         overview: m.overview,
+      }));
+    } else if (isHostTitles) {
+      body.customMedia = manualTitles.map((manualTitle) => ({
+        tmdbId: null,
+        mediaType: 'manual',
+        title: manualTitle,
+        posterPath: null,
+        releaseYear: '',
+        overview: '',
       }));
     } else if (activeMediaType) {
       body.mediaType = activeMediaType;
@@ -319,7 +345,7 @@ export default function CreateSessionForm() {
         </div>
       </div>
 
-      {!isCustomPool && (
+      {!isCustomSearch && !isHostTitles && (
         <div className="flex flex-col gap-2">
           <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
             Genre filters
@@ -348,7 +374,7 @@ export default function CreateSessionForm() {
         </div>
       )}
 
-      {isCustomPool && (
+      {isCustomSearch && (
         <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
           <div className="flex flex-col gap-2">
             <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
@@ -456,6 +482,66 @@ export default function CreateSessionForm() {
                     <button
                       type="button"
                       onClick={() => removeCustomMedia(item)}
+                      className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {isHostTitles && (
+        <div className="flex flex-col gap-4 rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-700 dark:bg-zinc-800/50">
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+              Add your own titles
+            </span>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={manualInput}
+                onChange={(e) => setManualInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    addManualTitle();
+                  }
+                }}
+                placeholder="Type a title and press Add"
+                maxLength={255}
+                className="flex-1 rounded-xl border border-zinc-300 bg-white px-4 py-3 text-zinc-900 placeholder-zinc-400 outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-50"
+              />
+              <button
+                type="button"
+                onClick={addManualTitle}
+                className="rounded-xl bg-emerald-500 px-4 py-2 font-semibold text-white hover:bg-emerald-600"
+              >
+                Add
+              </button>
+            </div>
+          </div>
+
+          {manualTitles.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
+                Selected ({manualTitles.length})
+              </span>
+              <div className="grid max-h-48 grid-cols-1 gap-2 overflow-y-auto">
+                {manualTitles.map((title, index) => (
+                  <div
+                    key={`manual-${title}-${index}`}
+                    className="flex items-center justify-between rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-3 dark:border-emerald-500/30"
+                  >
+                    <span className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      {title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeManualTitle(index)}
                       className="rounded-lg bg-zinc-200 px-2 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-300 dark:bg-zinc-700 dark:text-zinc-300"
                     >
                       Remove

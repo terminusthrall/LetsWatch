@@ -11,7 +11,7 @@ const createSessionBodySchema = z.object({
   title: z.string().max(100).optional(),
   deadlineAt: z.string().datetime().optional(),
   initialPoolType: z
-    .enum(['trending_movies', 'top_tv', 'sci_fi_action', 'custom'])
+    .enum(['trending_movies', 'top_tv', 'sci_fi_action', 'custom', 'host_titles'])
     .optional()
     .default('trending_movies'),
   mediaType: z.string().optional(),
@@ -19,8 +19,8 @@ const createSessionBodySchema = z.object({
   customMedia: z
     .array(
       z.object({
-        tmdbId: z.string().min(1),
-        mediaType: z.enum(['movie', 'tv']),
+        tmdbId: z.string().min(1).nullable().optional(),
+        mediaType: z.enum(['movie', 'tv', 'manual']),
         title: z.string().min(1),
         posterPath: z.string().nullable().optional(),
         releaseYear: z.string().optional(),
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
     let records: Array<{
       id: string;
       sessionId: string;
-      tmdbId: string;
+      tmdbId: string | null;
       mediaType: string;
       title: string;
       posterPath: string | null;
@@ -129,11 +129,11 @@ export async function POST(request: NextRequest) {
       overview: string;
     }> = [];
 
-    if (initialPoolType === 'custom' && customMedia && customMedia.length > 0) {
+    if ((initialPoolType === 'custom' || initialPoolType === 'host_titles') && customMedia && customMedia.length > 0) {
       records = customMedia.map((item) => ({
         id: crypto.randomUUID(),
         sessionId,
-        tmdbId: item.tmdbId,
+        tmdbId: item.tmdbId ?? null,
         mediaType: item.mediaType,
         title: item.title,
         posterPath: item.posterPath ?? null,

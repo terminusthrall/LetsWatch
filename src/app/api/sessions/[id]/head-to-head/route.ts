@@ -12,7 +12,7 @@ import {
 
 type WinnerMedia = {
   id: string;
-  tmdbId: string;
+  tmdbId: string | null;
   mediaType: string;
   title: string;
   posterPath: string | null;
@@ -35,12 +35,15 @@ async function buildWinnerMedia(
 
   if (!media) return null;
 
+  const tmdbId = media.tmdbId;
   let voteAverage: number | null = null;
-  try {
-    const details = await getMediaDetails(media.mediaType, media.tmdbId);
-    voteAverage = details.vote_average ?? null;
-  } catch {
-    voteAverage = null;
+  if (tmdbId) {
+    try {
+      const details = await getMediaDetails(media.mediaType, tmdbId);
+      voteAverage = details.vote_average ?? null;
+    } catch {
+      voteAverage = null;
+    }
   }
 
   return {

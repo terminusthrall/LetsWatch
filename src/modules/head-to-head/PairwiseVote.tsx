@@ -5,7 +5,7 @@ import { getPosterUrl } from '@/lib/poster';
 
 type PairwiseItem = {
   id: string;
-  tmdbId: string;
+  tmdbId: string | null;
   mediaType: string;
   title: string;
   posterPath: string | null;
