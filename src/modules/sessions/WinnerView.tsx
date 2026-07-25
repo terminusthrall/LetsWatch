@@ -1,6 +1,6 @@
 'use client';
 
-import { getPosterUrl } from '@/modules/tmdb';
+import { getPosterUrl } from '@/lib/poster';
 
 type WinningMedia = {
   id: string;

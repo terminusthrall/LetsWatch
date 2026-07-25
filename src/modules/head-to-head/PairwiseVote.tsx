@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { getPosterUrl } from '@/modules/tmdb';
+import { getPosterUrl } from '@/lib/poster';
 
 type PairwiseItem = {
   id: string;
