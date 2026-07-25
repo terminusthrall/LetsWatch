@@ -4,7 +4,7 @@ import { getPosterUrl } from '@/lib/poster';
 
 type WinningMedia = {
   id: string;
-  tmdbId: string;
+  tmdbId: string | null;
   mediaType: string;
   title: string;
   posterPath: string | null;
