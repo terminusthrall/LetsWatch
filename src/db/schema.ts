@@ -3,7 +3,7 @@ import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
 import { z } from 'zod';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
-export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'COMPLETED']);  
+export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'DEADLINE_RESOLVED', 'COMPLETED']);  
 
 // 1. Users & Accounts Schema (Ephemeral Guests & Pro Subscribers)
 export const users = pgTable('users', {  
@@ -30,12 +30,14 @@ export const sessions = pgTable('sessions', {
   id: uuid('id').primaryKey().defaultRandom(),  
   hostId: uuid('host_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),  
   title: varchar('title', { length: 100 }).default('Movie Night').notNull(),  
+  joinCode: varchar('join_code', { length: 6 }),  
   status: sessionStatusEnum('status').default('SWIPING_ACTIVE').notNull(),  
   finalWinningMediaId: varchar('final_winning_media_id', { length: 50 }),  
   deadlineAt: timestamp('deadline_at').notNull(),  
   createdAt: timestamp('created_at').defaultNow().notNull(),  
 }, (table) => [
   index('idx_sessions_host_id').on(table.hostId),
+  uniqueIndex('idx_sessions_join_code').on(table.joinCode),
 ]);  
 
 // 3. Session Media Pool

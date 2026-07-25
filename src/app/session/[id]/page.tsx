@@ -4,18 +4,25 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import PairwiseVote from '@/modules/head-to-head/PairwiseVote';
 import WinnerView from '@/modules/sessions/WinnerView';
+import CountdownTimer from '@/modules/sessions/CountdownTimer';
+import InviteModal from '@/modules/sessions/InviteModal';
 import {
   SwipeDeck,
   type SwipeMedia,
   type SwipeDirection,
 } from '@/modules/swiping/SwipeDeck';
 
-type SessionStatus = 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED';
+type SessionStatus =
+  | 'SWIPING_ACTIVE'
+  | 'HEAD_TO_HEAD_ACTIVE'
+  | 'DEADLINE_RESOLVED'
+  | 'COMPLETED';
 
 type SessionResponse = {
   session: {
     id: string;
     title: string;
+    joinCode: string | null;
     status: SessionStatus;
     deadlineAt: string;
     finalWinningMediaId: string | null;
@@ -120,6 +127,7 @@ export default function SessionRoomPage() {
   const [toast, setToast] = useState<{ mediaId: string; title: string } | null>(
     null
   );
+  const [inviteOpen, setInviteOpen] = useState(false);
 
   const fetchSession = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -335,20 +343,32 @@ export default function SessionRoomPage() {
       {session && (
         <>
           <header className="mb-6 w-full max-w-3xl">
-            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
                   {session.session.title}
                 </h1>
                 <p className="text-sm text-zinc-500 dark:text-zinc-400">
                   {session.participantCount} participant
-                  {session.participantCount === 1 ? '' : 's'} · ends{' '}
-                  {new Date(session.session.deadlineAt).toLocaleString()}
+                  {session.participantCount === 1 ? '' : 's'} · ends in{' '}
+                  <CountdownTimer
+                    deadlineAt={session.session.deadlineAt}
+                    onExpired={() => fetchSession({ silent: false })}
+                  />
                 </p>
               </div>
-              <span className="mt-2 inline-flex w-fit items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 sm:mt-0">
-                {session.session.status.replace(/_/g, ' ')}
-              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setInviteOpen(true)}
+                  className="inline-flex items-center rounded-full bg-emerald-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
+                >
+                  Invite Group
+                </button>
+                <span className="inline-flex w-fit items-center rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  {session.session.status.replace(/_/g, ' ')}
+                </span>
+              </div>
             </div>
           </header>
 
@@ -361,6 +381,7 @@ export default function SessionRoomPage() {
 
             if (
               session.session.status === 'COMPLETED' ||
+              session.session.status === 'DEADLINE_RESOLVED' ||
               session.session.finalWinningMediaId
             ) {
               const fallbackMedia = session.session.finalWinningMediaId
@@ -445,6 +466,12 @@ export default function SessionRoomPage() {
               />
             );
           })()}
+
+          <InviteModal
+            joinCode={session.session.joinCode}
+            open={inviteOpen}
+            onClose={() => setInviteOpen(false)}
+          />
         </>
       )}
     </main>

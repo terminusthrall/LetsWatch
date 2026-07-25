@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, sessions, sessionMedia } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
 import { addSessionParticipant, setSessionState } from '@/modules/redis';
 import { z } from 'zod';
@@ -8,10 +9,48 @@ import { z } from 'zod';
 const createSessionBodySchema = z.object({
   displayName: z.string().min(1).max(50),
   title: z.string().max(100).optional(),
-  deadlineHours: z.coerce.number().int().min(1).max(168).optional().default(24),
+  deadlineAt: z.string().datetime().optional(),
+  initialPoolType: z
+    .enum(['trending_movies', 'top_tv', 'sci_fi_action', 'custom'])
+    .optional()
+    .default('trending_movies'),
   mediaType: z.string().optional(),
   genreIds: z.array(z.number().int()).optional(),
+  customMedia: z
+    .array(
+      z.object({
+        tmdbId: z.string().min(1),
+        mediaType: z.enum(['movie', 'tv']),
+        title: z.string().min(1),
+        posterPath: z.string().nullable().optional(),
+        releaseYear: z.string().optional(),
+        overview: z.string().optional(),
+      })
+    )
+    .optional(),
 });
+
+function generateJoinCode(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const values = new Uint8Array(6);
+  crypto.getRandomValues(values);
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars[values[i] % chars.length];
+  }
+  return code;
+}
+
+async function generateUniqueJoinCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const code = generateJoinCode();
+    const existing = await db.query.sessions.findFirst({
+      where: eq(sessions.joinCode, code),
+    });
+    if (!existing) return code;
+  }
+  throw new Error('Unable to generate a unique join code');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,7 +64,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { displayName, title, deadlineHours, mediaType, genreIds } = parsed.data;
+    const {
+      displayName,
+      title,
+      deadlineAt: deadlineAtInput,
+      initialPoolType,
+      mediaType,
+      genreIds,
+      customMedia,
+    } = parsed.data;
+
+    // Resolve deadline
+    let deadlineAt: Date;
+    if (deadlineAtInput) {
+      deadlineAt = new Date(deadlineAtInput);
+      if (
+        isNaN(deadlineAt.getTime()) ||
+        deadlineAt.getTime() <= Date.now()
+      ) {
+        return NextResponse.json(
+          { error: 'Deadline must be a future date' },
+          { status: 400 }
+        );
+      }
+    } else {
+      deadlineAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    }
 
     // Create ephemeral user
     const userId = crypto.randomUUID();
@@ -36,19 +100,19 @@ export async function POST(request: NextRequest) {
       isProSubscriber: 0,
     });
 
-    // Create session
+    // Create session with unique join code
     const sessionId = crypto.randomUUID();
-    const deadlineAt = new Date(Date.now() + deadlineHours * 60 * 60 * 1000);
-    
+    const joinCode = await generateUniqueJoinCode();
+
     await db.insert(sessions).values({
       id: sessionId,
       hostId: userId,
       title: title || 'Movie Night',
+      joinCode,
       status: 'SWIPING_ACTIVE',
       deadlineAt,
     });
 
-    // Build TMDB discover filters
     const withGenres =
       Array.isArray(genreIds) && genreIds.length > 0
         ? genreIds.join(',')
@@ -65,7 +129,18 @@ export async function POST(request: NextRequest) {
       overview: string;
     }> = [];
 
-    if (mediaType === 'tv') {
+    if (initialPoolType === 'custom' && customMedia && customMedia.length > 0) {
+      records = customMedia.map((item) => ({
+        id: crypto.randomUUID(),
+        sessionId,
+        tmdbId: item.tmdbId,
+        mediaType: item.mediaType,
+        title: item.title,
+        posterPath: item.posterPath ?? null,
+        releaseYear: item.releaseYear ?? '',
+        overview: item.overview ?? 'No overview available.',
+      }));
+    } else if (initialPoolType === 'top_tv' || mediaType === 'tv') {
       const tv = await discoverTV({
         sort_by: 'popularity.desc',
         page: 1,
@@ -76,7 +151,18 @@ export async function POST(request: NextRequest) {
         sessionId,
         ...mapTVToSessionMedia(item),
       }));
-    } else if (mediaType === 'movie' || !mediaType) {
+    } else if (initialPoolType === 'sci_fi_action') {
+      const movies = await discoverMovies({
+        sort_by: 'popularity.desc',
+        page: 1,
+        with_genres: '878,28',
+      });
+      records = movies.results.slice(0, 15).map((movie: TMDBMovie) => ({
+        id: crypto.randomUUID(),
+        sessionId,
+        ...mapMovieToSessionMedia(movie),
+      }));
+    } else if (initialPoolType === 'trending_movies' || mediaType === 'movie' || !mediaType) {
       const movies = await discoverMovies({
         sort_by: 'popularity.desc',
         page: 1,
@@ -116,6 +202,7 @@ export async function POST(request: NextRequest) {
       status: 'SWIPING_ACTIVE',
       participantCount: 1,
       mediaCount: records.length,
+      deadlineAt: deadlineAt.toISOString(),
     });
 
     // Set cookie with user and session info
@@ -123,6 +210,7 @@ export async function POST(request: NextRequest) {
       sessionId,
       userId,
       title: title || 'Movie Night',
+      joinCode,
       status: 'SWIPING_ACTIVE',
       deadlineAt: deadlineAt.toISOString(),
     });

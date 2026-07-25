@@ -8,6 +8,9 @@ import {
   getSessionMatches,
   getParticipantCount,
   getSessionParticipants,
+  acquireSessionLock,
+  releaseSessionLock,
+  setSessionState,
 } from '@/modules/redis';
 
 type WinnerMedia = {
@@ -24,6 +27,57 @@ type WinnerMedia = {
 
 function watchUrlForTitle(title: string): string {
   return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
+}
+
+async function resolveDeadlineIfExpired(
+  session: {
+    id: string;
+    status: string;
+    deadlineAt: Date;
+    finalWinningMediaId: string | null;
+  }
+): Promise<{ status: string; finalWinningMediaId: string | null }> {
+  if (session.status !== 'SWIPING_ACTIVE' || new Date() <= session.deadlineAt) {
+    return { status: session.status, finalWinningMediaId: session.finalWinningMediaId };
+  }
+
+  const lockAcquired = await acquireSessionLock(session.id, 10);
+  if (!lockAcquired) {
+    return { status: session.status, finalWinningMediaId: session.finalWinningMediaId };
+  }
+
+  try {
+    const matches = await getSessionMatches(session.id);
+    let newStatus = session.status;
+    let winnerId: string | null = session.finalWinningMediaId;
+
+    if (matches.length >= 2) {
+      newStatus = 'HEAD_TO_HEAD_ACTIVE';
+    } else if (matches.length === 1) {
+      newStatus = 'COMPLETED';
+      winnerId = matches[0];
+    } else {
+      newStatus = 'DEADLINE_RESOLVED';
+      winnerId = null;
+    }
+
+    await db
+      .update(sessions)
+      .set({ status: newStatus as any, finalWinningMediaId: winnerId })
+      .where(eq(sessions.id, session.id));
+
+    const participantCount = await getParticipantCount(session.id);
+    await setSessionState(session.id, {
+      status: newStatus,
+      participantCount,
+      matches,
+      deadlineAt: session.deadlineAt.toISOString(),
+    });
+
+    return { status: newStatus, finalWinningMediaId: winnerId };
+  } finally {
+    await releaseSessionLock(session.id);
+  }
 }
 
 async function buildWinnerMedia(
@@ -124,6 +178,10 @@ export async function GET(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
+    const resolved = await resolveDeadlineIfExpired(session);
+    session.status = resolved.status as (typeof session.status);
+    session.finalWinningMediaId = resolved.finalWinningMediaId;
+
     // Get media pool for session
     const mediaPool = await db.query.sessionMedia.findMany({
       where: eq(sessionMedia.sessionId, sessionId),
@@ -150,7 +208,7 @@ export async function GET(
     const participantCount = await getParticipantCount(sessionId);
 
     const winningMedia =
-      session.status === 'COMPLETED'
+      session.status === 'COMPLETED' || session.status === 'DEADLINE_RESOLVED'
         ? await getWinnerFromState(redisState, session.finalWinningMediaId)
         : null;
 
@@ -158,6 +216,7 @@ export async function GET(
       session: {
         id: session.id,
         title: session.title,
+        joinCode: session.joinCode,
         status: session.status,
         deadlineAt: session.deadlineAt.toISOString(),
         finalWinningMediaId: session.finalWinningMediaId,

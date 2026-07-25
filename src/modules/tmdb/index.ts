@@ -7,6 +7,7 @@ export interface TMDBMovie {
   poster_path: string | null;
   overview: string;
   vote_average: number;
+  genre_ids?: number[];
 }
 
 export interface TMDBTV {
@@ -16,6 +17,7 @@ export interface TMDBTV {
   poster_path: string | null;
   overview: string;
   vote_average: number;
+  genre_ids?: number[];
 }
 
 export interface TMDBResponse<T> {
@@ -94,6 +96,46 @@ export async function discoverTV(options: {
     throw new Error(`TMDB API error: ${response.statusText}`);
   }
 
+  return await response.json();
+}
+
+export async function searchMovies(query: string, options: {
+  page?: number;
+  language?: string;
+  include_adult?: boolean;
+  year?: number;
+} = {}): Promise<TMDBResponse<TMDBMovie>> {
+  const params = buildBaseParams();
+  params.append('query', query);
+  if (options.page) params.append('page', options.page.toString());
+  if (options.language) params.append('language', options.language);
+  if (typeof options.include_adult === 'boolean') params.append('include_adult', String(options.include_adult));
+  if (options.year) params.append('year', options.year.toString());
+
+  const response = await fetch(`${TMDB_BASE_URL}/search/movie?${params}`);
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.statusText}`);
+  }
+  return await response.json();
+}
+
+export async function searchTV(query: string, options: {
+  page?: number;
+  language?: string;
+  include_adult?: boolean;
+  first_air_date_year?: number;
+} = {}): Promise<TMDBResponse<TMDBTV>> {
+  const params = buildBaseParams();
+  params.append('query', query);
+  if (options.page) params.append('page', options.page.toString());
+  if (options.language) params.append('language', options.language);
+  if (typeof options.include_adult === 'boolean') params.append('include_adult', String(options.include_adult));
+  if (options.first_air_date_year) params.append('first_air_date_year', options.first_air_date_year.toString());
+
+  const response = await fetch(`${TMDB_BASE_URL}/search/tv?${params}`);
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.statusText}`);
+  }
   return await response.json();
 }
 
