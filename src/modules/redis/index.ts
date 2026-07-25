@@ -1,12 +1,25 @@
 import { Redis } from '@upstash/redis';
 
-if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
-  throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables are required');
+let redisInstance: Redis | undefined;
+
+function getRedis(): Redis {
+  if (redisInstance) return redisInstance;
+
+  const url = process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+  if (!url || !token) {
+    throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables are required');
+  }
+
+  redisInstance = new Redis({ url, token });
+  return redisInstance;
 }
 
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN,
+const redis = new Proxy({} as Redis, {
+  get(_, prop) {
+    return Reflect.get(getRedis(), prop);
+  },
 });
 
 // Session State Engine Keys

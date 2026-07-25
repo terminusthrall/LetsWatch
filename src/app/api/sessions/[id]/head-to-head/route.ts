@@ -58,10 +58,10 @@ async function buildWinnerMedia(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionId = params.id;
+    const sessionId = (await params).id;
 
     // Authenticate participant via cookie
     const cookie = request.cookies.get('user_session')?.value;

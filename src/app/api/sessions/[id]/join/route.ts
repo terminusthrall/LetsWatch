@@ -6,10 +6,10 @@ import { addSessionParticipant, getParticipantCount, setSessionState } from '@/m
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionId = params.id;
+    const sessionId = (await params).id;
     const body = await request.json();
     const { displayName } = body;
 

@@ -79,10 +79,10 @@ function getWinnerFromState(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const sessionId = params.id;
+    const sessionId = (await params).id;
 
     // Verify participant authentication
     const cookie = request.cookies.get('user_session')?.value;
