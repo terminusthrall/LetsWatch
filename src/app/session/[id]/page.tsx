@@ -23,6 +23,7 @@ type SessionResponse = {
     id: string;
     title: string;
     joinCode: string | null;
+    hostId: string;
     status: SessionStatus;
     deadlineAt: string;
     finalWinningMediaId: string | null;
@@ -77,6 +78,11 @@ type SwipeResponse = {
     title: string;
     posterPath: string | null;
   };
+};
+
+type EndSessionResponse = {
+  status: SessionStatus;
+  winningMedia: SessionResponse['winningMedia'];
 };
 
 function MatchToast({
@@ -218,6 +224,37 @@ export default function SessionRoomPage() {
     }
   };
 
+  const handleEndSession = useCallback(async () => {
+    if (!id || !session) return;
+    if (session.userId !== session.session.hostId) return;
+
+    const confirmed = window.confirm(
+      'End swiping early and see results?'
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/sessions/${id}/end`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+
+      if (res.status === 403) {
+        setError('Only the host can end the session early.');
+        return;
+      }
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error || 'Failed to end session');
+      }
+
+      await fetchSession({ silent: false });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    }
+  }, [id, session, fetchSession]);
+
   const handleVote = useCallback(
     async (mediaId: string, direction: SwipeDirection) => {
       if (!id || !session?.userId) return;
@@ -358,6 +395,16 @@ export default function SessionRoomPage() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                {session.session.hostId === session.userId &&
+                  session.session.status === 'SWIPING_ACTIVE' && (
+                    <button
+                      type="button"
+                      onClick={handleEndSession}
+                      className="inline-flex items-center rounded-full bg-rose-500 px-4 py-1.5 text-xs font-semibold text-white hover:bg-rose-600"
+                    >
+                      End Swiping & See Results
+                    </button>
+                  )}
                 <button
                   type="button"
                   onClick={() => setInviteOpen(true)}

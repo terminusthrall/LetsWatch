@@ -217,6 +217,7 @@ export async function GET(
         id: session.id,
         title: session.title,
         joinCode: session.joinCode,
+        hostId: session.hostId,
         status: session.status,
         deadlineAt: session.deadlineAt.toISOString(),
         finalWinningMediaId: session.finalWinningMediaId,
