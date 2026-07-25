@@ -1,11 +1,4 @@
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-const TMDB_IMAGE_BASE_URL = 'https://image.tmdb.org/t/p';
-
-const TMDB_API_KEY = process.env.TMDB_API_KEY;
-
-if (!TMDB_API_KEY) {
-  throw new Error('TMDB_API_KEY environment variable is required');
-}
 
 export interface TMDBMovie {
   id: number;
@@ -42,8 +35,17 @@ export interface SessionMediaRecord {
 }
 
 function buildBaseParams(): URLSearchParams {
+  if (typeof window !== 'undefined') {
+    throw new Error('@/modules/tmdb can only be used on the server');
+  }
+
+  const apiKey = process.env.TMDB_API_KEY;
+  if (!apiKey) {
+    throw new Error('TMDB_API_KEY environment variable is not set');
+  }
+
   const params = new URLSearchParams();
-  params.append('api_key', TMDB_API_KEY!);
+  params.append('api_key', apiKey);
   return params;
 }
 
@@ -134,11 +136,6 @@ export function getMediaDetails(
   tmdbId: string
 ): Promise<TMDBMovieDetails | TMDBTVDetails> {
   return mediaType === 'tv' ? getTVDetails(tmdbId) : getMovieDetails(tmdbId);
-}
-
-export function getPosterUrl(path: string | null, size: string = 'w342'): string | null {
-  if (!path) return null;
-  return `${TMDB_IMAGE_BASE_URL}/${size}${path}`;
 }
 
 export function mapMovieToSessionMedia(movie: TMDBMovie): SessionMediaRecord {

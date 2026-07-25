@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { getPosterUrl } from '@/modules/tmdb';
+import { getPosterUrl } from '@/lib/poster';
 
 export type SwipeDirection = 'LIKE' | 'PASS';
 
