@@ -10,7 +10,71 @@ import {
   acquireEvaluationLock,
   releaseEvaluationLock,
   getSessionParticipants,
+  getSessionMatches,
+  acquireSessionLock,
+  releaseSessionLock,
 } from '@/modules/redis';
+
+async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
+  const [mediaRecords, swipeRecords, participants] = await Promise.all([
+    db.query.sessionMedia.findMany({
+      where: eq(sessionMedia.sessionId, sessionId),
+      columns: { id: true },
+    }),
+    db.query.swipes.findMany({
+      where: eq(swipes.sessionId, sessionId),
+      columns: { userId: true, mediaId: true },
+    }),
+    getSessionParticipants(sessionId),
+  ]);
+
+  const mediaCount = mediaRecords.length;
+  if (mediaCount === 0 || participants.length === 0) return false;
+
+  const swipedByUser = new Map<string, Set<string>>();
+  for (const swipe of swipeRecords) {
+    const set = swipedByUser.get(swipe.userId) ?? new Set<string>();
+    set.add(swipe.mediaId);
+    swipedByUser.set(swipe.userId, set);
+  }
+
+  return participants.every(
+    (userId) => (swipedByUser.get(userId)?.size ?? 0) >= mediaCount
+  );
+}
+
+async function checkAndTransitionSession(sessionId: string) {
+  const isComplete = await checkAllParticipantsFinished(sessionId);
+  if (!isComplete) return;
+
+  const lockAcquired = await acquireSessionLock(sessionId, 10);
+  if (!lockAcquired) return;
+
+  try {
+    const stillComplete = await checkAllParticipantsFinished(sessionId);
+    if (!stillComplete) return;
+
+    const session = await db.query.sessions.findFirst({
+      where: eq(sessions.id, sessionId),
+    });
+    if (!session || session.status !== 'SWIPING_ACTIVE') return;
+
+    const matches = await getSessionMatches(sessionId);
+    if (matches.length === 1) {
+      await db
+        .update(sessions)
+        .set({ status: 'COMPLETED', finalWinningMediaId: matches[0] })
+        .where(eq(sessions.id, sessionId));
+    } else {
+      await db
+        .update(sessions)
+        .set({ status: 'HEAD_TO_HEAD_ACTIVE' })
+        .where(eq(sessions.id, sessionId));
+    }
+  } finally {
+    await releaseSessionLock(sessionId);
+  }
+}
 
 export async function POST(
   request: NextRequest,
@@ -75,14 +139,24 @@ export async function POST(
       return NextResponse.json({ error: 'Session is not in swiping phase' }, { status: 400 });
     }
 
-    // Record swipe in database
-    await db.insert(swipes).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      userId,
-      mediaId,
-      vote,
-    });
+    // Record swipe in database, ignoring duplicate submissions
+    const insertedSwipe = await db
+      .insert(swipes)
+      .values({
+        id: crypto.randomUUID(),
+        sessionId,
+        userId,
+        mediaId,
+        vote,
+      })
+      .onConflictDoNothing({
+        target: [swipes.sessionId, swipes.userId, swipes.mediaId],
+      })
+      .returning({ id: swipes.id });
+
+    if (insertedSwipe.length === 0) {
+      return NextResponse.json({ success: true });
+    }
 
     let matchFound = false;
 
@@ -120,6 +194,8 @@ export async function POST(
         }
       }
     }
+
+    await checkAndTransitionSession(sessionId);
 
     return NextResponse.json({
       success: true,

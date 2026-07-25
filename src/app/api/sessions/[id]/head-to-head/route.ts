@@ -138,6 +138,7 @@ export async function POST(
           eq(sessionMedia.sessionId, sessionId),
           eq(sessionMedia.isMatched, 1)
         ),
+        orderBy: (sessionMedia, { asc }) => [asc(sessionMedia.addedAt)],
       });
       matchIds = matched.map((m) => m.id);
     }
