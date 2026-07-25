@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sessions, sessionMedia, headToHeadVotes } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { sessions, sessionMedia, headToHeadVotes, users, swipes } from '@/db/schema';
+import { eq, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import {
   getSessionState,
@@ -164,8 +164,8 @@ export async function GET(
       return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
     }
 
-    const participants = await getSessionParticipants(sessionId);
-    if (!participants.includes(userId)) {
+    const participantIds = await getSessionParticipants(sessionId);
+    if (!participantIds.includes(userId)) {
       return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
     }
 
@@ -187,6 +187,46 @@ export async function GET(
       where: eq(sessionMedia.sessionId, sessionId),
       orderBy: (sessionMedia, { asc }) => [asc(sessionMedia.addedAt)],
     });
+
+    // Get participant display names and swipe progress
+    const [userRecords, swipeRecords] = await Promise.all([
+      participantIds.length > 0
+        ? db.query.users.findMany({
+            where: inArray(users.id, participantIds),
+            columns: { id: true, displayName: true },
+          })
+        : Promise.resolve([]),
+      db.query.swipes.findMany({
+        where: eq(swipes.sessionId, sessionId),
+        columns: { userId: true, mediaId: true },
+      }),
+    ]);
+
+    const totalMediaCount = mediaPool.length;
+    const swipedByUser = new Map<string, Set<string>>();
+    for (const swipe of swipeRecords) {
+      const set = swipedByUser.get(swipe.userId) ?? new Set<string>();
+      set.add(swipe.mediaId);
+      swipedByUser.set(swipe.userId, set);
+    }
+
+    const participants = participantIds
+      .map((id) => {
+        const user = userRecords.find((u) => u.id === id);
+        const swipedCount = swipedByUser.get(id)?.size ?? 0;
+        return {
+          userId: id,
+          displayName: user?.displayName ?? 'Guest',
+          isHost: id === session.hostId,
+          swipedCount,
+          totalMediaCount,
+          isFinished: swipedCount >= totalMediaCount,
+        };
+      })
+      .sort((a, b) => {
+        if (a.isHost !== b.isHost) return a.isHost ? -1 : 1;
+        return a.displayName.localeCompare(b.displayName);
+      });
 
     // Get head-to-head votes and standings
     const h2hVotes = await db.query.headToHeadVotes.findMany({
@@ -222,6 +262,7 @@ export async function GET(
         deadlineAt: session.deadlineAt.toISOString(),
         finalWinningMediaId: session.finalWinningMediaId,
       },
+      participants,
       mediaPool: mediaPool.map(media => ({
         id: media.id,
         tmdbId: media.tmdbId,
