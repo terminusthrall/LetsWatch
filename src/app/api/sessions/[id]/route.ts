@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sessions, sessionMedia, headToHeadVotes, users, swipes } from '@/db/schema';
+import {
+  sessions,
+  sessionMedia,
+  headToHeadVotes,
+  users,
+  swipes,
+  sessionStatusEnum,
+} from '@/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
@@ -28,6 +35,10 @@ function watchUrlForTitle(title: string): string {
   return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
 }
 
+/**
+ * Lazily resolves a session's outcome when the deadline has passed.
+ * This runs as a side effect of GET polling so the app does not need cron infrastructure.
+ */
 async function resolveDeadlineIfExpired(
   session: {
     id: string;
@@ -50,7 +61,8 @@ async function resolveDeadlineIfExpired(
 
   try {
     const matches = await getSessionMatches(session.id);
-    let newStatus = session.status;
+    type SessionStatusEnum = (typeof sessionStatusEnum.enumValues)[number];
+    let newStatus: SessionStatusEnum = session.status as SessionStatusEnum;
     let winnerId: string | null = session.finalWinningMediaId;
     let candidateIds: string[] = [];
 
@@ -104,7 +116,7 @@ async function resolveDeadlineIfExpired(
 
     await db
       .update(sessions)
-      .set({ status: newStatus as 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED' | 'DEADLINE_RESOLVED', finalWinningMediaId: winnerId })
+      .set({ status: newStatus, finalWinningMediaId: winnerId })
       .where(eq(sessions.id, session.id));
 
     if (winnerId) {

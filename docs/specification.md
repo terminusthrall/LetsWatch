@@ -74,6 +74,7 @@ import { z } from 'zod';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
 export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'DEADLINE_RESOLVED', 'COMPLETED']);  
+// `DEADLINE_RESOLVED` applies once the deadline passes and no winning media can be determined (no likes or an unresolved head-to-head tie).
 
 // 1. Users & Accounts Schema (Ephemeral Guests & Pro Subscribers)
 export const users = pgTable('users', {  
