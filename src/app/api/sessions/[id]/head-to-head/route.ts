@@ -5,7 +5,7 @@ import { eq, and, or } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { z } from 'zod';
 import {
-  setSessionState,
+  cacheWinner,
   getSessionMatches,
 } from '@/modules/redis';
 import { getAuthenticatedParticipant } from '@/modules/auth';
@@ -128,10 +128,6 @@ export async function POST(
     }
 
     if (matchIds.length < 2) {
-      const [participantCount, mediaCount] = await Promise.all([
-        getParticipantCount(sessionId),
-        db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
-      ]);
       const winningMediaId = matchIds[0] ?? null;
       await db
         .update(sessions)
@@ -144,19 +140,10 @@ export async function POST(
       const winner = winningMediaId
         ? await buildWinnerMedia(winningMediaId)
         : null;
-      await setSessionState(
-        sessionId,
-        {
-          status: 'COMPLETED',
-          participantCount,
-          mediaCount,
-          deadlineAt: session.deadlineAt.toISOString(),
-          matches: matchIds,
-          winner,
-          completedAt: Date.now(),
-        },
-        ttl
-      );
+
+      if (winner) {
+        await cacheWinner(sessionId, winner);
+      }
 
       return NextResponse.json({
         success: true,
@@ -239,7 +226,6 @@ export async function POST(
     if (allVotes.length >= expectedVotes && standings.length > 0) {
       const winningMediaId = standings[0].mediaId;
       const winner = await buildWinnerMedia(winningMediaId);
-      const mediaCount = await db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId));
 
       await db
         .update(sessions)
@@ -249,19 +235,9 @@ export async function POST(
         })
         .where(eq(sessions.id, sessionId));
 
-      await setSessionState(
-        sessionId,
-        {
-          status: 'COMPLETED',
-          participantCount,
-          mediaCount,
-          deadlineAt: session.deadlineAt.toISOString(),
-          matches: matchIds,
-          winner,
-          completedAt: Date.now(),
-        },
-        ttl
-      );
+      if (winner) {
+        await cacheWinner(sessionId, winner);
+      }
 
       return NextResponse.json({
         success: true,

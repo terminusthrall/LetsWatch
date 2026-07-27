@@ -22,24 +22,19 @@ const redis = new Proxy({} as Redis, {
   },
 });
 
-export interface SessionState {
-  status: string;
-  participantCount: number;
-  mediaCount: number;
-  deadlineAt: string;
-  matches: string[];
-  winner?: unknown;
-  completedAt?: number;
-}
-
 // Session State Engine Keys
 const SESSION_PREFIX = 'session:';
 const SESSION_LOCK_PREFIX = 'session_lock:';
 const SESSION_PARTICIPANTS_PREFIX = 'session_participants:';
 const SESSION_MATCHES_PREFIX = 'session_matches:';
+const SESSION_WINNER_PREFIX = 'session_winner:';
 
 function getSessionMediaLikesKey(sessionId: string, mediaId: string): string {
   return `${SESSION_PREFIX}${sessionId}:media:${mediaId}:likes`;
+}
+
+function getSessionWinnerKey(sessionId: string): string {
+  return `${SESSION_WINNER_PREFIX}${sessionId}`;
 }
 
 /**
@@ -69,24 +64,23 @@ export async function releaseSessionLock(sessionId: string): Promise<void> {
   await redis.del(lockKey);
 }
 
+const WINNER_CACHE_TTL_SECONDS = 24 * 60 * 60;
+
 /**
- * Get session state from Redis
+ * Cache the resolved winner for a session
  * @param sessionId - The session ID
+ * @param winner - The winner payload to cache
  */
-export async function getSessionState(sessionId: string): Promise<SessionState | null> {
-  const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  return await redis.get<SessionState>(stateKey);
+export async function cacheWinner(sessionId: string, winner: unknown): Promise<void> {
+  await redis.set(getSessionWinnerKey(sessionId), winner, { ex: WINNER_CACHE_TTL_SECONDS });
 }
 
 /**
- * Set session state in Redis
+ * Get the cached winner for a session
  * @param sessionId - The session ID
- * @param state - The session state object
- * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function setSessionState(sessionId: string, state: SessionState, ttl: number = 3600): Promise<void> {
-  const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  await redis.set(stateKey, state, { ex: ttl });
+export async function getCachedWinner(sessionId: string): Promise<unknown | null> {
+  return await redis.get(getSessionWinnerKey(sessionId));
 }
 
 /**
@@ -235,11 +229,11 @@ export async function releaseEvaluationLock(sessionId: string): Promise<void> {
  */
 export async function clearSessionData(sessionId: string): Promise<void> {
   const keys = [
-    `${SESSION_PREFIX}${sessionId}`,
     `${SESSION_LOCK_PREFIX}${sessionId}`,
     `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`,
     `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`,
     `${SESSION_MATCHES_PREFIX}${sessionId}`,
+    `${SESSION_WINNER_PREFIX}${sessionId}`,
   ];
   
   await redis.del(...keys);
