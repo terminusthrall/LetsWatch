@@ -149,7 +149,7 @@ export const headToHeadResponseSchema = z.object({
 
 export type HeadToHeadResponse = z.infer<typeof headToHeadResponseSchema>;
 
-export const sessionDetailResponseSchema = z.object({
+export const sessionStateResponseSchema = z.object({
   session: z.object({
     id: z.string(),
     title: z.string(),
@@ -160,7 +160,6 @@ export const sessionDetailResponseSchema = z.object({
     finalWinningMediaId: z.string().nullable(),
   }),
   participants: z.array(participantSchema),
-  mediaPool: z.array(sessionMediaSchema),
   mySwipedMediaIds: z.array(z.string()),
   matches: z.array(z.string()),
   participantCount: z.number(),
@@ -174,6 +173,18 @@ export const sessionDetailResponseSchema = z.object({
   ),
   headToHeadStandings: z.array(headToHeadStandingSchema),
   winningMedia: winnerMediaSchema.nullable(),
+});
+
+export type SessionStateResponse = z.infer<typeof sessionStateResponseSchema>;
+
+export const sessionMediaResponseSchema = z.object({
+  mediaPool: z.array(sessionMediaSchema),
+});
+
+export type SessionMediaResponse = z.infer<typeof sessionMediaResponseSchema>;
+
+export const sessionDetailResponseSchema = sessionStateResponseSchema.extend({
+  mediaPool: z.array(sessionMediaSchema),
 });
 
 export type SessionDetailResponse = z.infer<typeof sessionDetailResponseSchema>;
