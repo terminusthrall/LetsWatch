@@ -2,7 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { addSessionParticipant, getParticipantCount, setSessionState } from '@/modules/redis';
+import { setSessionState } from '@/modules/redis';
+import {
+  addSessionParticipant,
+  getParticipantCount,
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 
 export async function POST(
   request: NextRequest,
@@ -41,14 +46,15 @@ export async function POST(
     });
 
     // Add to Redis participants set
-    await addSessionParticipant(sessionId, userId);
+    await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
     // Update participant count in session state
     const participantCount = await getParticipantCount(sessionId);
+    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(sessionId, {
       status: session.status,
       participantCount,
-    });
+    }, ttl);
 
     // Set cookie with user and session info
     const response = NextResponse.json({

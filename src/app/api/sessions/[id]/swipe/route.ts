@@ -5,15 +5,18 @@ import { eq, and } from 'drizzle-orm';
 import { 
   incrementMediaLike, 
   getMediaLikeCount, 
-  getParticipantCount, 
   addSessionMatch,
   acquireEvaluationLock,
   releaseEvaluationLock,
-  getSessionParticipants,
   getSessionMatches,
   acquireSessionLock,
   releaseSessionLock,
 } from '@/modules/redis';
+import {
+  getSessionParticipants,
+  getParticipantCount,
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
   const [mediaRecords, swipeRecords, participants] = await Promise.all([
@@ -162,7 +165,8 @@ export async function POST(
 
     // If LIKE, increment Redis like count and check for unanimous match
     if (vote === 'LIKE') {
-      const likeCount = await incrementMediaLike(sessionId, mediaId);
+      const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
+      const likeCount = await incrementMediaLike(sessionId, mediaId, ttl);
       const participantCount = await getParticipantCount(sessionId);
 
       // Check if all participants have liked this media
@@ -185,7 +189,7 @@ export async function POST(
                 ));
 
               // Add to Redis matches set
-              await addSessionMatch(sessionId, mediaId);
+              await addSessionMatch(sessionId, mediaId, ttl);
               matchFound = true;
             }
           } finally {

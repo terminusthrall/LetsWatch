@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { setSessionState } from '@/modules/redis';
 import {
   addSessionParticipant,
   getParticipantCount,
-  setSessionState,
-} from '@/modules/redis';
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 import { z } from 'zod';
 
 const joinBodySchema = z.object({
@@ -54,14 +55,15 @@ export async function POST(request: NextRequest) {
       isProSubscriber: 0,
     });
 
-    await addSessionParticipant(sessionId, userId);
+    await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
     const participantCount = await getParticipantCount(sessionId);
+    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(sessionId, {
       status: session.status,
       participantCount,
       deadlineAt: session.deadlineAt.toISOString(),
-    });
+    }, ttl);
 
     const response = NextResponse.json({
       sessionId,

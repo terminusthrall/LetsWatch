@@ -4,11 +4,14 @@ import { headToHeadVotes, sessions, sessionMedia } from '@/db/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import {
-  getSessionMatches,
-  getParticipantCount,
-  getSessionParticipants,
   setSessionState,
+  getSessionMatches,
 } from '@/modules/redis';
+import {
+  getSessionParticipants,
+  getParticipantCount,
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 
 type WinnerMedia = {
   id: string;
@@ -122,6 +125,8 @@ export async function POST(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
+    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
+
     if (session.status === 'COMPLETED') {
       return NextResponse.json(
         { error: 'Session is already completed' },
@@ -159,7 +164,7 @@ export async function POST(
       await setSessionState(
         sessionId,
         { status: 'COMPLETED', winner, completedAt: Date.now() },
-        86400
+        ttl
       );
 
       return NextResponse.json({
@@ -255,7 +260,7 @@ export async function POST(
       await setSessionState(
         sessionId,
         { status: 'COMPLETED', winner, completedAt: Date.now() },
-        86400
+        ttl
       );
 
       return NextResponse.json({

@@ -6,12 +6,15 @@ import { getMediaDetails } from '@/modules/tmdb';
 import {
   getSessionState,
   getSessionMatches,
-  getParticipantCount,
-  getSessionParticipants,
   acquireSessionLock,
   releaseSessionLock,
   setSessionState,
 } from '@/modules/redis';
+import {
+  getSessionParticipants,
+  getParticipantCount,
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 
 type WinnerMedia = {
   id: string;
@@ -67,12 +70,13 @@ async function resolveDeadlineIfExpired(
       .where(eq(sessions.id, session.id));
 
     const participantCount = await getParticipantCount(session.id);
+    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(session.id, {
       status: newStatus,
       participantCount,
       matches,
       deadlineAt: session.deadlineAt.toISOString(),
-    });
+    }, ttl);
 
     return { status: newStatus, finalWinningMediaId: winnerId };
   } finally {
