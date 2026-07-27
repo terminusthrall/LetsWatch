@@ -29,26 +29,58 @@ export interface TMDBResponse<T> {
 
 export interface SessionMediaRecord {
   tmdbId: string;
-  mediaType: string;
+  mediaType: 'movie' | 'tv';
   title: string;
   posterPath: string | null;
   releaseYear: string;
   overview: string;
+  genreIds?: number[];
+  voteAverage?: number;
 }
 
-function buildBaseParams(): URLSearchParams {
+function getApiToken(): string {
   if (typeof window !== 'undefined') {
     throw new Error('@/modules/tmdb can only be used on the server');
   }
 
-  const apiKey = process.env.TMDB_API_KEY;
-  if (!apiKey) {
+  const token = process.env.TMDB_API_KEY;
+  if (!token) {
     throw new Error('TMDB_API_KEY environment variable is not set');
   }
 
-  const params = new URLSearchParams();
-  params.append('api_key', apiKey);
-  return params;
+  return token;
+}
+
+interface TmdbFetchOptions {
+  revalidate?: number;
+}
+
+async function tmdbFetch<T>(
+  path: string,
+  params?: URLSearchParams,
+  options: TmdbFetchOptions = {}
+): Promise<T> {
+  const token = getApiToken();
+  const query = params ? `?${params.toString()}` : '';
+
+  const init: RequestInit & { next?: { revalidate?: number } } = {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json;charset=utf-8',
+    },
+  };
+
+  if (options.revalidate !== undefined) {
+    init.next = { revalidate: options.revalidate };
+  }
+
+  const response = await fetch(`${TMDB_BASE_URL}${path}${query}`, init);
+
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.statusText}`);
+  }
+
+  return response.json();
 }
 
 export async function discoverMovies(options: {
@@ -58,21 +90,14 @@ export async function discoverMovies(options: {
   with_genres?: string;
   year?: number;
 } = {}): Promise<TMDBResponse<TMDBMovie>> {
-  const params = buildBaseParams();
-  
+  const params = new URLSearchParams();
   if (options.page) params.append('page', options.page.toString());
   if (options.language) params.append('language', options.language);
   if (options.sort_by) params.append('sort_by', options.sort_by);
   if (options.with_genres) params.append('with_genres', options.with_genres);
   if (options.year) params.append('year', options.year.toString());
 
-  const response = await fetch(`${TMDB_BASE_URL}/discover/movie?${params}`);
-  
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-
-  return await response.json();
+  return tmdbFetch('/discover/movie', params, { revalidate: 3600 });
 }
 
 export async function discoverTV(options: {
@@ -82,61 +107,56 @@ export async function discoverTV(options: {
   with_genres?: string;
   first_air_date_year?: number;
 } = {}): Promise<TMDBResponse<TMDBTV>> {
-  const params = buildBaseParams();
-  
+  const params = new URLSearchParams();
   if (options.page) params.append('page', options.page.toString());
   if (options.language) params.append('language', options.language);
   if (options.sort_by) params.append('sort_by', options.sort_by);
   if (options.with_genres) params.append('with_genres', options.with_genres);
-  if (options.first_air_date_year) params.append('first_air_date_year', options.first_air_date_year.toString());
+  if (options.first_air_date_year)
+    params.append('first_air_date_year', options.first_air_date_year.toString());
 
-  const response = await fetch(`${TMDB_BASE_URL}/discover/tv?${params}`);
-  
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-
-  return await response.json();
+  return tmdbFetch('/discover/tv', params, { revalidate: 3600 });
 }
 
-export async function searchMovies(query: string, options: {
-  page?: number;
-  language?: string;
-  include_adult?: boolean;
-  year?: number;
-} = {}): Promise<TMDBResponse<TMDBMovie>> {
-  const params = buildBaseParams();
+export async function searchMovies(
+  query: string,
+  options: {
+    page?: number;
+    language?: string;
+    include_adult?: boolean;
+    year?: number;
+  } = {}
+): Promise<TMDBResponse<TMDBMovie>> {
+  const params = new URLSearchParams();
   params.append('query', query);
   if (options.page) params.append('page', options.page.toString());
   if (options.language) params.append('language', options.language);
-  if (typeof options.include_adult === 'boolean') params.append('include_adult', String(options.include_adult));
+  if (typeof options.include_adult === 'boolean')
+    params.append('include_adult', String(options.include_adult));
   if (options.year) params.append('year', options.year.toString());
 
-  const response = await fetch(`${TMDB_BASE_URL}/search/movie?${params}`);
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-  return await response.json();
+  return tmdbFetch('/search/movie', params, { revalidate: 3600 });
 }
 
-export async function searchTV(query: string, options: {
-  page?: number;
-  language?: string;
-  include_adult?: boolean;
-  first_air_date_year?: number;
-} = {}): Promise<TMDBResponse<TMDBTV>> {
-  const params = buildBaseParams();
+export async function searchTV(
+  query: string,
+  options: {
+    page?: number;
+    language?: string;
+    include_adult?: boolean;
+    first_air_date_year?: number;
+  } = {}
+): Promise<TMDBResponse<TMDBTV>> {
+  const params = new URLSearchParams();
   params.append('query', query);
   if (options.page) params.append('page', options.page.toString());
   if (options.language) params.append('language', options.language);
-  if (typeof options.include_adult === 'boolean') params.append('include_adult', String(options.include_adult));
-  if (options.first_air_date_year) params.append('first_air_date_year', options.first_air_date_year.toString());
+  if (typeof options.include_adult === 'boolean')
+    params.append('include_adult', String(options.include_adult));
+  if (options.first_air_date_year)
+    params.append('first_air_date_year', options.first_air_date_year.toString());
 
-  const response = await fetch(`${TMDB_BASE_URL}/search/tv?${params}`);
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-  return await response.json();
+  return tmdbFetch('/search/tv', params, { revalidate: 3600 });
 }
 
 export interface TMDBMovieDetails extends TMDBMovie {
@@ -151,26 +171,14 @@ export interface TMDBTVDetails extends TMDBTV {
   status?: string;
 }
 
-export async function getMovieDetails(tmdbId: string): Promise<TMDBMovieDetails> {
-  const params = buildBaseParams();
-  const response = await fetch(`${TMDB_BASE_URL}/movie/${tmdbId}?${params}`);
-
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-
-  return await response.json();
+export async function getMovieDetails(
+  tmdbId: string
+): Promise<TMDBMovieDetails> {
+  return tmdbFetch(`/movie/${tmdbId}`, undefined, { revalidate: 86400 });
 }
 
 export async function getTVDetails(tmdbId: string): Promise<TMDBTVDetails> {
-  const params = buildBaseParams();
-  const response = await fetch(`${TMDB_BASE_URL}/tv/${tmdbId}?${params}`);
-
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-
-  return await response.json();
+  return tmdbFetch(`/tv/${tmdbId}`, undefined, { revalidate: 86400 });
 }
 
 export function getMediaDetails(
@@ -180,8 +188,11 @@ export function getMediaDetails(
   return mediaType === 'tv' ? getTVDetails(tmdbId) : getMovieDetails(tmdbId);
 }
 
-export function mapMovieToSessionMedia(movie: TMDBMovie): SessionMediaRecord {
-  return {
+export function mapMovieToSessionMedia(
+  movie: TMDBMovie,
+  options?: { includeDetails?: boolean }
+): SessionMediaRecord {
+  const record: SessionMediaRecord = {
     tmdbId: movie.id.toString(),
     mediaType: 'movie',
     title: movie.title,
@@ -189,10 +200,20 @@ export function mapMovieToSessionMedia(movie: TMDBMovie): SessionMediaRecord {
     releaseYear: movie.release_date ? movie.release_date.substring(0, 4) : '',
     overview: movie.overview,
   };
+
+  if (options?.includeDetails) {
+    record.genreIds = movie.genre_ids ?? [];
+    record.voteAverage = movie.vote_average ?? 0;
+  }
+
+  return record;
 }
 
-export function mapTVToSessionMedia(tv: TMDBTV): SessionMediaRecord {
-  return {
+export function mapTVToSessionMedia(
+  tv: TMDBTV,
+  options?: { includeDetails?: boolean }
+): SessionMediaRecord {
+  const record: SessionMediaRecord = {
     tmdbId: tv.id.toString(),
     mediaType: 'tv',
     title: tv.name,
@@ -200,4 +221,11 @@ export function mapTVToSessionMedia(tv: TMDBTV): SessionMediaRecord {
     releaseYear: tv.first_air_date ? tv.first_air_date.substring(0, 4) : '',
     overview: tv.overview,
   };
+
+  if (options?.includeDetails) {
+    record.genreIds = tv.genre_ids ?? [];
+    record.voteAverage = tv.vote_average ?? 0;
+  }
+
+  return record;
 }

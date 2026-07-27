@@ -1,32 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchMovies, searchTV, TMDBMovie, TMDBTV } from '@/modules/tmdb';
+import {
+  searchMovies,
+  searchTV,
+  mapMovieToSessionMedia,
+  mapTVToSessionMedia,
+  type TMDBTV,
+} from '@/modules/tmdb';
 import { type MediaSearchResult, type MediaSearchResponse } from '@/types/api';
-
-function mapMovie(item: TMDBMovie): MediaSearchResult {
-  return {
-    tmdbId: item.id.toString(),
-    mediaType: 'movie',
-    title: item.title,
-    posterPath: item.poster_path ?? null,
-    releaseYear: item.release_date ? item.release_date.substring(0, 4) : '',
-    overview: item.overview ?? '',
-    genreIds: item.genre_ids ?? [],
-    voteAverage: item.vote_average ?? 0,
-  };
-}
-
-function mapTV(item: TMDBTV): MediaSearchResult {
-  return {
-    tmdbId: item.id.toString(),
-    mediaType: 'tv',
-    title: item.name,
-    posterPath: item.poster_path ?? null,
-    releaseYear: item.first_air_date ? item.first_air_date.substring(0, 4) : '',
-    overview: item.overview ?? '',
-    genreIds: item.genre_ids ?? [],
-    voteAverage: item.vote_average ?? 0,
-  };
-}
 
 export async function GET(request: NextRequest) {
   try {
@@ -48,15 +28,24 @@ export async function GET(request: NextRequest) {
 
     if (mediaType === 'tv') {
       const tv = await searchTV(query, { page });
-      results = tv.results.map(mapTV);
+      results = tv.results.map(
+        (item) =>
+          mapTVToSessionMedia(item, { includeDetails: true }) as MediaSearchResult
+      );
     } else if (mediaType === 'movie' || mediaType === 'both') {
       const [movies, tv] = await Promise.all([
         searchMovies(query, { page }),
         mediaType === 'both' ? searchTV(query, { page }) : Promise.resolve({ results: [] as TMDBTV[] }),
       ]);
       results = [
-        ...movies.results.map(mapMovie),
-        ...tv.results.map(mapTV),
+        ...movies.results.map(
+          (item) =>
+            mapMovieToSessionMedia(item, { includeDetails: true }) as MediaSearchResult
+        ),
+        ...tv.results.map(
+          (item) =>
+            mapTVToSessionMedia(item, { includeDetails: true }) as MediaSearchResult
+        ),
       ];
     } else {
       return NextResponse.json(
