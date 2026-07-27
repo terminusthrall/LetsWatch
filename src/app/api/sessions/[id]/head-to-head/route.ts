@@ -3,12 +3,18 @@ import { db } from '@/db';
 import { headToHeadVotes, sessions, sessionMedia } from '@/db/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
+import { z } from 'zod';
 import {
   getSessionMatches,
   getParticipantCount,
   getSessionParticipants,
   setSessionState,
 } from '@/modules/redis';
+
+const headToHeadVoteSchema = z.object({
+  preferredMediaId: z.string().uuid(),
+  opponentMediaId: z.string().uuid(),
+});
 
 type WinnerMedia = {
   id: string;
@@ -98,14 +104,14 @@ export async function POST(
     }
 
     const body = await request.json();
-    const { preferredMediaId, opponentMediaId } = body;
+    const parsed = headToHeadVoteSchema.safeParse(body);
 
-    if (!preferredMediaId || !opponentMediaId) {
-      return NextResponse.json(
-        { error: 'Preferred and opponent media are required' },
-        { status: 400 }
-      );
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join(', ');
+      return NextResponse.json({ error: message }, { status: 400 });
     }
+
+    const { preferredMediaId, opponentMediaId } = parsed.data;
 
     if (preferredMediaId === opponentMediaId) {
       return NextResponse.json(

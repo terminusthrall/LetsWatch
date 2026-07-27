@@ -182,7 +182,6 @@ export default function PairwiseVote({
         headers: { 'Content-Type': 'application/json' },
         credentials: 'same-origin',
         body: JSON.stringify({
-          userId,
           preferredMediaId: preferred.id,
           opponentMediaId: opponent.id,
         }),
