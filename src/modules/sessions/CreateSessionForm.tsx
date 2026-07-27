@@ -106,12 +106,7 @@ export default function CreateSessionForm() {
     initialPoolType === 'top_tv' ? 'tv' : 'movie';
 
   useEffect(() => {
-    setSelectedGenres([]);
-  }, [initialPoolType]);
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
-      setSearchResults([]);
       return;
     }
 
@@ -276,7 +271,10 @@ export default function CreateSessionForm() {
             <button
               key={pool.id}
               type="button"
-              onClick={() => setInitialPoolType(pool.id)}
+              onClick={() => {
+                setInitialPoolType(pool.id);
+                setSelectedGenres([]);
+              }}
               aria-pressed={initialPoolType === pool.id}
               className={[
                 'rounded-xl border px-3 py-3 text-sm font-semibold transition',
@@ -357,7 +355,7 @@ export default function CreateSessionForm() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Searching...</p>
           )}
 
-          {searchResults.length > 0 && (
+          {searchQuery.trim().length > 0 && searchResults.length > 0 && (
             <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
               {searchResults.map((item) => (
                 <div

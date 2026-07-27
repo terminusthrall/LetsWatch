@@ -71,7 +71,7 @@ export async function getSessionState(sessionId: string) {
  * @param state - The session state object
  * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function setSessionState(sessionId: string, state: any, ttl: number = 3600): Promise<void> {
+export async function setSessionState(sessionId: string, state: unknown, ttl: number = 3600): Promise<void> {
   const stateKey = `${SESSION_PREFIX}${sessionId}`;
   await redis.set(stateKey, JSON.stringify(state), { ex: ttl });
 }

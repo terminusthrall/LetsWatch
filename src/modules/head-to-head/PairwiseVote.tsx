@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getPosterUrl } from '@/lib/poster';
 import { pairKey, generatePairs } from './pairs';
 
@@ -102,16 +102,6 @@ export default function PairwiseVote({
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setVoted((prev) => {
-      const next = new Set(prev);
-      for (const v of myVotes) {
-        next.add(pairKey(v.preferredMediaId, v.opponentMediaId));
-      }
-      return next;
-    });
-  }, [myVotes]);
 
   const allPairs = useMemo(() => generatePairs(items), [items]);
 
