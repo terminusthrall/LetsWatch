@@ -121,6 +121,10 @@ export default function SessionRoomPage() {
   );
   const [inviteOpen, setInviteOpen] = useState(false);
 
+  const remainingMedia = session
+    ? session.mediaPool.filter((m) => !session.mySwipedMediaIds.includes(m.id))
+    : [];
+
   const fetchSession = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!id) return;
@@ -492,7 +496,8 @@ export default function SessionRoomPage() {
 
             return (
               <SwipeDeck
-                items={session.mediaPool.map(
+                key={remainingMedia.length}
+                items={remainingMedia.map(
                   (media): SwipeMedia => ({
                     id: media.id,
                     title: media.title,
