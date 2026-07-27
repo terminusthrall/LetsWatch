@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { getPosterUrl } from '@/lib/poster';
+import { pairKey, generatePairs } from './pairs';
 
 type PairwiseItem = {
   id: string;
@@ -32,10 +33,6 @@ type PairwiseVoteProps = {
   participantCount: number;
   onVoteSubmitted: () => void;
 };
-
-function pairKey(a: string, b: string): string {
-  return a < b ? `${a}:${b}` : `${b}:${a}`;
-}
 
 function PosterCard({
   item,
@@ -106,25 +103,7 @@ export default function PairwiseVote({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setVoted((prev) => {
-      const next = new Set(prev);
-      for (const v of myVotes) {
-        next.add(pairKey(v.preferredMediaId, v.opponentMediaId));
-      }
-      return next;
-    });
-  }, [myVotes]);
-
-  const allPairs = useMemo(() => {
-    const pairs: Array<[PairwiseItem, PairwiseItem]> = [];
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        pairs.push([items[i], items[j]]);
-      }
-    }
-    return pairs;
-  }, [items]);
+  const allPairs = useMemo(() => generatePairs(items), [items]);
 
   const currentPair = useMemo(() => {
     return (

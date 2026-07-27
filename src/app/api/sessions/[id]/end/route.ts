@@ -12,6 +12,7 @@ import {
   releaseSessionLock,
 } from '@/modules/redis';
 import { getAuthenticatedParticipant } from '@/modules/auth';
+import { resolveEndSession } from '@/modules/sessions/resolve';
 
 type WinnerMedia = {
   id: string;
@@ -134,38 +135,10 @@ export async function POST(
         }
       }
 
-      let maxLikes = 0;
-      const topIds: string[] = [];
-      const consensusIds: string[] = [];
-
-      for (const [mediaId, count] of likeCounts) {
-        if (count > maxLikes) {
-          maxLikes = count;
-          topIds.length = 0;
-          topIds.push(mediaId);
-        } else if (count === maxLikes) {
-          topIds.push(mediaId);
-        }
-
-        if (participantCount > 0 && count === participantCount) {
-          consensusIds.push(mediaId);
-        }
-      }
-
-      let winningMediaId: string | null = null;
-      let newStatus: 'COMPLETED' | 'HEAD_TO_HEAD_ACTIVE';
-
-      if (consensusIds.length === 1) {
-        winningMediaId = consensusIds[0];
-        newStatus = 'COMPLETED';
-      } else if (topIds.length === 1) {
-        winningMediaId = topIds[0];
-        newStatus = 'COMPLETED';
-      } else {
-        newStatus = 'HEAD_TO_HEAD_ACTIVE';
-      }
-
-      const candidateIds = newStatus === 'HEAD_TO_HEAD_ACTIVE' ? topIds : winningMediaId ? [winningMediaId] : [];
+      const { newStatus, winningMediaId, candidateIds } = resolveEndSession(
+        likeCounts,
+        participantCount
+      );
 
       if (candidateIds.length > 0) {
         await db

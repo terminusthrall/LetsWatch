@@ -67,7 +67,7 @@ async function resolveDeadlineIfExpired(
 
     await db
       .update(sessions)
-      .set({ status: newStatus as any, finalWinningMediaId: winnerId })
+      .set({ status: newStatus as 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED' | 'DEADLINE_RESOLVED', finalWinningMediaId: winnerId })
       .where(eq(sessions.id, session.id));
 
     const participantCount = await getParticipantCount(session.id);

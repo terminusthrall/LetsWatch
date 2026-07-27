@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
 export default function InviteModal({
   joinCode,
@@ -19,9 +19,10 @@ export default function InviteModal({
       : 'https://letswatch.app';
   const shareUrl = joinCode ? `${appUrl}/join?code=${joinCode}` : '';
 
-  useEffect(() => {
-    if (!open) setCopied(false);
-  }, [open]);
+  const handleClose = () => {
+    setCopied(false);
+    onClose();
+  };
 
   const handleCopy = async () => {
     if (!shareUrl) return;
@@ -39,7 +40,7 @@ export default function InviteModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6"
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         className="w-full max-w-sm rounded-3xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
@@ -76,7 +77,7 @@ export default function InviteModal({
 
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="w-full rounded-xl bg-zinc-900 px-5 py-3 font-semibold text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-white"
         >
           Done

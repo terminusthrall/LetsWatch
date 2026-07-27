@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getPosterUrl } from '@/lib/poster';
+import { computeDeadlineAt } from './deadline';
 
 type MediaType = 'movie' | 'tv';
 
@@ -84,35 +85,6 @@ const DEADLINE_OPTIONS: { id: string; label: string }[] = [
   { id: 'custom', label: 'Custom' },
 ];
 
-function computeDeadlineAt(deadlineOption: string, customDeadline: string): string {
-  const now = new Date();
-  switch (deadlineOption) {
-    case '1h':
-      return new Date(now.getTime() + 60 * 60 * 1000).toISOString();
-    case '3h':
-      return new Date(now.getTime() + 3 * 60 * 60 * 1000).toISOString();
-    case '24h':
-      return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-    case 'tonight9pm': {
-      const target = new Date();
-      target.setHours(21, 0, 0, 0);
-      if (target.getTime() <= now.getTime()) {
-        target.setDate(target.getDate() + 1);
-      }
-      return target.toISOString();
-    }
-    case 'custom': {
-      const d = new Date(customDeadline);
-      if (isNaN(d.getTime()) || d.getTime() <= now.getTime()) {
-        return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-      }
-      return d.toISOString();
-    }
-    default:
-      return new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
-  }
-}
-
 export default function CreateSessionForm() {
   const router = useRouter();
 
@@ -134,12 +106,7 @@ export default function CreateSessionForm() {
     initialPoolType === 'top_tv' ? 'tv' : 'movie';
 
   useEffect(() => {
-    setSelectedGenres([]);
-  }, [initialPoolType]);
-
-  useEffect(() => {
     if (!searchQuery.trim()) {
-      setSearchResults([]);
       return;
     }
 
@@ -304,7 +271,10 @@ export default function CreateSessionForm() {
             <button
               key={pool.id}
               type="button"
-              onClick={() => setInitialPoolType(pool.id)}
+              onClick={() => {
+                setInitialPoolType(pool.id);
+                setSelectedGenres([]);
+              }}
               aria-pressed={initialPoolType === pool.id}
               className={[
                 'rounded-xl border px-3 py-3 text-sm font-semibold transition',
@@ -385,7 +355,7 @@ export default function CreateSessionForm() {
             <p className="text-sm text-zinc-500 dark:text-zinc-400">Searching...</p>
           )}
 
-          {searchResults.length > 0 && (
+          {searchQuery.trim().length > 0 && searchResults.length > 0 && (
             <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
               {searchResults.map((item) => (
                 <div
