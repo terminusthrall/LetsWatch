@@ -128,6 +128,10 @@ export async function POST(
     }
 
     if (matchIds.length < 2) {
+      const [participantCount, mediaCount] = await Promise.all([
+        getParticipantCount(sessionId),
+        db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
+      ]);
       const winningMediaId = matchIds[0] ?? null;
       await db
         .update(sessions)
@@ -142,7 +146,15 @@ export async function POST(
         : null;
       await setSessionState(
         sessionId,
-        { status: 'COMPLETED', winner, completedAt: Date.now() },
+        {
+          status: 'COMPLETED',
+          participantCount,
+          mediaCount,
+          deadlineAt: session.deadlineAt.toISOString(),
+          matches: matchIds,
+          winner,
+          completedAt: Date.now(),
+        },
         ttl
       );
 
@@ -227,6 +239,7 @@ export async function POST(
     if (allVotes.length >= expectedVotes && standings.length > 0) {
       const winningMediaId = standings[0].mediaId;
       const winner = await buildWinnerMedia(winningMediaId);
+      const mediaCount = await db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId));
 
       await db
         .update(sessions)
@@ -238,7 +251,15 @@ export async function POST(
 
       await setSessionState(
         sessionId,
-        { status: 'COMPLETED', winner, completedAt: Date.now() },
+        {
+          status: 'COMPLETED',
+          participantCount,
+          mediaCount,
+          deadlineAt: session.deadlineAt.toISOString(),
+          matches: matchIds,
+          winner,
+          completedAt: Date.now(),
+        },
         ttl
       );
 

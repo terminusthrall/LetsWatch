@@ -205,6 +205,7 @@ export async function POST(request: NextRequest) {
       status: 'SWIPING_ACTIVE',
       participantCount: 1,
       mediaCount: records.length,
+      matches: [],
       deadlineAt: deadlineAt.toISOString(),
     }, ttl);
 

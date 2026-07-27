@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { users, sessions } from '@/db/schema';
+import { users, sessions, sessionMedia } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { setSessionState } from '@/modules/redis';
 import {
@@ -58,12 +58,17 @@ export async function POST(request: NextRequest) {
 
     await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
-    const participantCount = await getParticipantCount(sessionId);
+    const [participantCount, mediaCount] = await Promise.all([
+      getParticipantCount(sessionId),
+      db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
+    ]);
     const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(sessionId, {
       status: session.status,
       participantCount,
+      mediaCount,
       deadlineAt: session.deadlineAt.toISOString(),
+      matches: [],
     }, ttl);
 
     const token = await mintSessionToken({ userId, sessionId });

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { users, sessions } from '@/db/schema';
+import { users, sessions, sessionMedia } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { setSessionState } from '@/modules/redis';
@@ -57,11 +57,17 @@ export async function POST(
     await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
     // Update participant count in session state
-    const participantCount = await getParticipantCount(sessionId);
+    const [participantCount, mediaCount] = await Promise.all([
+      getParticipantCount(sessionId),
+      db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
+    ]);
     const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(sessionId, {
       status: session.status,
       participantCount,
+      mediaCount,
+      deadlineAt: session.deadlineAt.toISOString(),
+      matches: [],
     }, ttl);
 
     // Set cookie with signed session token
