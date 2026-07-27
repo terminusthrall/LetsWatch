@@ -58,7 +58,7 @@ describe('resolveEndSession', () => {
     expect(result.consensusIds).toEqual(['m1', 'm2']);
   });
 
-  it('uses all zero-liked media as head-to-head candidates when no one has voted', () => {
+  it('resolves as DEADLINE_RESOLVED when no media has any likes', () => {
     const result = resolveEndSession(
       new Map([
         ['m1', 0],
@@ -66,8 +66,8 @@ describe('resolveEndSession', () => {
       ]),
       2
     );
-    expect(result.newStatus).toBe('HEAD_TO_HEAD_ACTIVE');
-    expect(result.topIds).toEqual(['m1', 'm2']);
-    expect(result.candidateIds).toEqual(['m1', 'm2']);
+    expect(result.newStatus).toBe('DEADLINE_RESOLVED');
+    expect(result.winningMediaId).toBeNull();
+    expect(result.candidateIds).toEqual([]);
   });
 });
