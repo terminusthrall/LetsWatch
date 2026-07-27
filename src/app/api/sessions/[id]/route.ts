@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { sessions, sessionMedia, headToHeadVotes, users, swipes } from '@/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, and, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
+import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
   getSessionMatches,
@@ -40,7 +41,10 @@ async function resolveDeadlineIfExpired(
     finalWinningMediaId: string | null;
   }
 ): Promise<{ status: string; finalWinningMediaId: string | null }> {
-  if (session.status !== 'SWIPING_ACTIVE' || new Date() <= session.deadlineAt) {
+  if (
+    (session.status !== 'SWIPING_ACTIVE' && session.status !== 'HEAD_TO_HEAD_ACTIVE') ||
+    new Date() <= session.deadlineAt
+  ) {
     return { status: session.status, finalWinningMediaId: session.finalWinningMediaId };
   }
 
@@ -54,14 +58,45 @@ async function resolveDeadlineIfExpired(
     let newStatus = session.status;
     let winnerId: string | null = session.finalWinningMediaId;
 
-    if (matches.length >= 2) {
-      newStatus = 'HEAD_TO_HEAD_ACTIVE';
-    } else if (matches.length === 1) {
-      newStatus = 'COMPLETED';
-      winnerId = matches[0];
+    if (session.status === 'SWIPING_ACTIVE') {
+      if (matches.length >= 2) {
+        newStatus = 'HEAD_TO_HEAD_ACTIVE';
+      } else if (matches.length === 1) {
+        newStatus = 'COMPLETED';
+        winnerId = matches[0];
+      } else {
+        newStatus = 'DEADLINE_RESOLVED';
+        winnerId = null;
+      }
     } else {
-      newStatus = 'DEADLINE_RESOLVED';
-      winnerId = null;
+      // HEAD_TO_HEAD_ACTIVE deadline resolution
+      const matchIds = matches;
+      if (matchIds.length === 0) {
+        newStatus = 'DEADLINE_RESOLVED';
+        winnerId = null;
+      } else {
+        const [allVotes, mediaItems] = await Promise.all([
+          db.query.headToHeadVotes.findMany({
+            where: eq(headToHeadVotes.sessionId, session.id),
+          }),
+          db.query.sessionMedia.findMany({
+            where: and(
+              eq(sessionMedia.sessionId, session.id),
+              inArray(sessionMedia.id, matchIds)
+            ),
+            columns: { id: true, addedAt: true },
+          }),
+        ]);
+        const addedAtByMediaId = new Map(mediaItems.map((m) => [m.id, m.addedAt]));
+        const standings = computeHeadToHeadStandings(matchIds, allVotes, addedAtByMediaId);
+        if (standings.length > 0) {
+          newStatus = 'COMPLETED';
+          winnerId = standings[0].mediaId;
+        } else {
+          newStatus = 'DEADLINE_RESOLVED';
+          winnerId = null;
+        }
+      }
     }
 
     await db
