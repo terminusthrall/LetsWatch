@@ -1,40 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchMovies, searchTV, TMDBMovie, TMDBTV } from '@/modules/tmdb';
+import { type MediaSearchResult, type MediaSearchResponse } from '@/types/api';
 
-type SearchResult = {
-  tmdbId: string;
-  mediaType: 'movie' | 'tv';
-  title: string;
-  posterPath: string | null;
-  releaseYear: string;
-  overview: string;
-  genreIds: number[];
-  voteAverage: number;
-};
-
-function mapMovie(item: TMDBMovie): SearchResult {
+function mapMovie(item: TMDBMovie): MediaSearchResult {
   return {
     tmdbId: item.id.toString(),
     mediaType: 'movie',
     title: item.title,
-    posterPath: item.poster_path,
+    posterPath: item.poster_path ?? null,
     releaseYear: item.release_date ? item.release_date.substring(0, 4) : '',
-    overview: item.overview,
+    overview: item.overview ?? '',
     genreIds: item.genre_ids ?? [],
-    voteAverage: item.vote_average,
+    voteAverage: item.vote_average ?? 0,
   };
 }
 
-function mapTV(item: TMDBTV): SearchResult {
+function mapTV(item: TMDBTV): MediaSearchResult {
   return {
     tmdbId: item.id.toString(),
     mediaType: 'tv',
     title: item.name,
-    posterPath: item.poster_path,
+    posterPath: item.poster_path ?? null,
     releaseYear: item.first_air_date ? item.first_air_date.substring(0, 4) : '',
-    overview: item.overview,
+    overview: item.overview ?? '',
     genreIds: item.genre_ids ?? [],
-    voteAverage: item.vote_average,
+    voteAverage: item.vote_average ?? 0,
   };
 }
 
@@ -51,10 +41,10 @@ export async function GET(request: NextRequest) {
       .filter((n) => !isNaN(n));
 
     if (!query) {
-      return NextResponse.json({ results: [] });
+      return NextResponse.json<MediaSearchResponse>({ results: [] });
     }
 
-    let results: SearchResult[] = [];
+    let results: MediaSearchResult[] = [];
 
     if (mediaType === 'tv') {
       const tv = await searchTV(query, { page });
@@ -81,7 +71,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ results });
+    return NextResponse.json<MediaSearchResponse>({ results });
   } catch (error) {
     console.error('Error searching media:', error);
     return NextResponse.json(

@@ -2,17 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { z } from 'zod';
 import {
   addSessionParticipant,
   getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
+import {
+  joinByIdBodySchema,
+  type JoinSessionResponse,
+  type SessionStatus,
+} from '@/types/api';
 import { mintSessionToken } from '@/modules/auth';
 
-const joinBodySchema = z.object({
-  displayName: z.string().trim().min(1).max(50),
-});
 
 export async function POST(
   request: NextRequest,
@@ -21,7 +22,7 @@ export async function POST(
   try {
     const sessionId = (await params).id;
     const body = await request.json();
-    const parsed = joinBodySchema.safeParse(body);
+    const parsed = joinByIdBodySchema.safeParse(body);
 
     if (!parsed.success) {
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
@@ -60,11 +61,11 @@ export async function POST(
 
     // Set cookie with signed session token
     const token = await mintSessionToken({ userId, sessionId });
-    const response = NextResponse.json({
+    const response = NextResponse.json<JoinSessionResponse>({
       sessionId,
       userId,
       title: session.title,
-      status: session.status,
+      status: session.status as SessionStatus,
       deadlineAt: session.deadlineAt.toISOString(),
       participantCount,
     });

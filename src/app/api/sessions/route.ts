@@ -5,31 +5,8 @@ import { eq } from 'drizzle-orm';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
 import { addSessionParticipant } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
-import { z } from 'zod';
+import { createSessionBodySchema, type CreateSessionResponse } from '@/types/api';
 
-const createSessionBodySchema = z.object({
-  displayName: z.string().min(1).max(50),
-  title: z.string().max(100).optional(),
-  deadlineAt: z.string().datetime().optional(),
-  initialPoolType: z
-    .enum(['trending_movies', 'top_tv', 'sci_fi_action', 'custom'])
-    .optional()
-    .default('trending_movies'),
-  mediaType: z.string().optional(),
-  genreIds: z.array(z.number().int()).optional(),
-  customMedia: z
-    .array(
-      z.object({
-        tmdbId: z.string().min(1),
-        mediaType: z.enum(['movie', 'tv']),
-        title: z.string().min(1),
-        posterPath: z.string().nullable().optional(),
-        releaseYear: z.string().optional(),
-        overview: z.string().optional(),
-      })
-    )
-    .optional(),
-});
 
 function generateJoinCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -202,7 +179,7 @@ export async function POST(request: NextRequest) {
 
     // Set cookie with signed session token
     const token = await mintSessionToken({ userId, sessionId });
-    const response = NextResponse.json({
+    const response = NextResponse.json<CreateSessionResponse>({
       sessionId,
       userId,
       title: title || 'Movie Night',
