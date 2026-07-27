@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { swipes, sessionMedia, sessions } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, count } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
   addMediaLike, 
@@ -27,30 +27,22 @@ const submitSwipeSchema = z.object({
 });
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
-  const [mediaRecords, swipeRecords, participants] = await Promise.all([
-    db.query.sessionMedia.findMany({
-      where: eq(sessionMedia.sessionId, sessionId),
-      columns: { id: true },
-    }),
-    db.query.swipes.findMany({
-      where: eq(swipes.sessionId, sessionId),
-      columns: { userId: true, mediaId: true },
-    }),
+  const [mediaCount, swipeCounts, participants] = await Promise.all([
+    db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
+    db
+      .select({ userId: swipes.userId, total: count() })
+      .from(swipes)
+      .where(eq(swipes.sessionId, sessionId))
+      .groupBy(swipes.userId),
     getSessionParticipants(sessionId),
   ]);
 
-  const mediaCount = mediaRecords.length;
   if (mediaCount === 0 || participants.length === 0) return false;
 
-  const swipedByUser = new Map<string, Set<string>>();
-  for (const swipe of swipeRecords) {
-    const set = swipedByUser.get(swipe.userId) ?? new Set<string>();
-    set.add(swipe.mediaId);
-    swipedByUser.set(swipe.userId, set);
-  }
+  const countByUser = new Map(swipeCounts.map((row) => [row.userId, Number(row.total)]));
 
   return participants.every(
-    (userId) => (swipedByUser.get(userId)?.size ?? 0) >= mediaCount
+    (userId) => (countByUser.get(userId) ?? 0) >= mediaCount
   );
 }
 
@@ -196,7 +188,16 @@ export async function POST(
       }
     }
 
-    await checkAndTransitionSession(sessionId);
+    // Only run the expensive completion/transition check if the current user
+    // has now finished swiping through every media item.
+    const [mediaCount, userSwipeCount] = await Promise.all([
+      db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
+      db.$count(swipes, and(eq(swipes.sessionId, sessionId), eq(swipes.userId, userId))),
+    ]);
+
+    if (userSwipeCount >= mediaCount) {
+      await checkAndTransitionSession(sessionId);
+    }
 
     return NextResponse.json({
       success: true,
