@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   type SessionDetailResponse,
+  type SessionStateResponse,
+  type SessionMediaResponse,
   type JoinSessionResponse,
   type SwipeResponse,
 } from '@/types/api';
@@ -13,8 +15,11 @@ interface SwipeResult {
   title: string | null;
 }
 
+const POLL_INTERVAL_MS = 5000;
+
 export function useSession(sessionId: string) {
-  const [session, setSession] = useState<SessionDetailResponse | null>(null);
+  const [sessionState, setSessionState] = useState<SessionStateResponse | null>(null);
+  const [mediaPool, setMediaPool] = useState<SessionDetailResponse['mediaPool'] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
@@ -22,9 +27,9 @@ export function useSession(sessionId: string) {
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
 
-  const fetchSession = useCallback(
-    async (options?: { silent?: boolean }) => {
-      if (!sessionId) return;
+  const fetchSessionState = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      if (!sessionId) return false;
 
       try {
         const res = await fetch(`/api/sessions/${sessionId}`, {
@@ -33,11 +38,9 @@ export function useSession(sessionId: string) {
 
         if (res.status === 401) {
           setNeedsJoin(true);
-          setSession(null);
-          if (!options?.silent) {
-            setIsLoading(false);
-          }
-          return;
+          setSessionState(null);
+          if (!options?.silent) setIsLoading(false);
+          return false;
         }
 
         if (!res.ok) {
@@ -45,44 +48,81 @@ export function useSession(sessionId: string) {
           throw new Error(data.error || 'Failed to load session');
         }
 
-        const data = (await res.json()) as SessionDetailResponse;
-        setSession(data);
+        const data = (await res.json()) as SessionStateResponse;
+        setSessionState(data);
         setNeedsJoin(false);
         setError(null);
+        return true;
       } catch (err) {
-        setError(
-          err instanceof Error ? err.message : 'Something went wrong'
-        );
-      } finally {
-        if (!options?.silent) {
-          setIsLoading(false);
-        }
+        setError(err instanceof Error ? err.message : 'Something went wrong');
+        if (!options?.silent) setIsLoading(false);
+        return false;
       }
     },
     [sessionId]
   );
 
+  const fetchMedia = useCallback(async (): Promise<boolean> => {
+    if (!sessionId) return false;
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/media`, {
+        credentials: 'same-origin',
+      });
+
+      if (res.status === 401) {
+        setNeedsJoin(true);
+        setIsLoading(false);
+        return false;
+      }
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error || 'Failed to load media pool');
+      }
+
+      const data = (await res.json()) as SessionMediaResponse;
+      setMediaPool(data.mediaPool);
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+      setIsLoading(false);
+      return false;
+    }
+  }, [sessionId]);
+
   useEffect(() => {
     if (!sessionId) return;
 
-    const initialTimer = setTimeout(() => {
-      fetchSession({ silent: false });
-    }, 0);
+    const init = async () => {
+      setIsLoading(true);
+      const ok = await fetchSessionState({ silent: false });
+      if (ok) await fetchMedia();
+      setIsLoading(false);
+    };
+
+    init();
 
     const interval = setInterval(() => {
-      fetchSession({ silent: true });
-    }, 5000);
+      fetchSessionState({ silent: true });
+    }, POLL_INTERVAL_MS);
 
     return () => {
-      clearTimeout(initialTimer);
       clearInterval(interval);
     };
-  }, [sessionId, fetchSession]);
+  }, [sessionId, fetchSessionState, fetchMedia]);
 
-  const refetch = useCallback(
-    () => fetchSession({ silent: false }),
-    [fetchSession]
-  );
+  const session = useMemo<SessionDetailResponse | null>(() => {
+    if (!sessionState) return null;
+    return { ...sessionState, mediaPool: mediaPool ?? [] };
+  }, [sessionState, mediaPool]);
+
+  const refetch = useCallback(async () => {
+    setIsLoading(true);
+    await fetchSessionState({ silent: false });
+    if (mediaPool === null) await fetchMedia();
+    setIsLoading(false);
+  }, [fetchSessionState, fetchMedia, mediaPool]);
 
   const join = useCallback(
     async (displayName: string) => {
@@ -116,7 +156,10 @@ export function useSession(sessionId: string) {
           throw new Error(message);
         }
 
-        await fetchSession({ silent: false });
+        setIsLoading(true);
+        const ok = await fetchSessionState({ silent: false });
+        if (ok) await fetchMedia();
+        setIsLoading(false);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : 'Something went wrong';
@@ -126,7 +169,7 @@ export function useSession(sessionId: string) {
         setIsJoining(false);
       }
     },
-    [sessionId, fetchSession]
+    [sessionId, fetchSessionState, fetchMedia]
   );
 
   const swipe = async (
@@ -192,11 +235,11 @@ export function useSession(sessionId: string) {
         throw new Error(data.error || 'Failed to end session');
       }
 
-      await fetchSession({ silent: false });
+      await refetch();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong');
     }
-  }, [sessionId, session, fetchSession]);
+  }, [sessionId, session, refetch]);
 
   return {
     session,

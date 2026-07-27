@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { sessions, sessionMedia, headToHeadVotes, users, swipes } from '@/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq, and, inArray, sql } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import { resolveSessionOutcome } from '@/modules/sessions/resolve';
 import {
-  type SessionDetailResponse,
+  type SessionStateResponse,
   type SessionStatus,
   type WinnerMedia,
 } from '@/types/api';
@@ -189,11 +189,12 @@ export async function GET(
     session.status = resolved.status as (typeof session.status);
     session.finalWinningMediaId = resolved.finalWinningMediaId;
 
-    // Get media pool for session
-    const mediaPool = await db.query.sessionMedia.findMany({
-      where: eq(sessionMedia.sessionId, sessionId),
-      orderBy: (sessionMedia, { asc }) => [asc(sessionMedia.addedAt)],
-    });
+    // Get total media count without loading the full pool
+    const [{ count: mediaCount }] = await db
+      .select({ count: sql`count(*)` })
+      .from(sessionMedia)
+      .where(eq(sessionMedia.sessionId, sessionId));
+    const totalMediaCount = Number(mediaCount ?? 0);
 
     // Get participant display names and swipe progress
     const [userRecords, swipeRecords] = await Promise.all([
@@ -209,7 +210,6 @@ export async function GET(
       }),
     ]);
 
-    const totalMediaCount = mediaPool.length;
     const swipedByUser = new Map<string, Set<string>>();
     for (const swipe of swipeRecords) {
       const set = swipedByUser.get(swipe.userId) ?? new Set<string>();
@@ -235,10 +235,13 @@ export async function GET(
         return a.displayName.localeCompare(b.displayName);
       });
 
-    // Get head-to-head votes and standings
-    const h2hVotes = await db.query.headToHeadVotes.findMany({
-      where: eq(headToHeadVotes.sessionId, sessionId),
-    });
+    // Get head-to-head votes and standings only when relevant
+    const h2hVotes =
+      session.status === 'SWIPING_ACTIVE'
+        ? []
+        : await db.query.headToHeadVotes.findMany({
+            where: eq(headToHeadVotes.sessionId, sessionId),
+          });
 
     const winCounts: Record<string, number> = {};
     for (const vote of h2hVotes) {
@@ -257,7 +260,7 @@ export async function GET(
         ? await getWinnerFromState(sessionId, session.finalWinningMediaId)
         : null;
 
-    return NextResponse.json<SessionDetailResponse>({
+    return NextResponse.json<SessionStateResponse>({
       session: {
         id: session.id,
         title: session.title,
@@ -268,16 +271,6 @@ export async function GET(
         finalWinningMediaId: session.finalWinningMediaId,
       },
       participants,
-      mediaPool: mediaPool.map(media => ({
-        id: media.id,
-        tmdbId: media.tmdbId,
-        mediaType: media.mediaType,
-        title: media.title,
-        posterPath: media.posterPath,
-        releaseYear: media.releaseYear,
-        overview: media.overview,
-        isMatched: media.isMatched === 1,
-      })),
       matches,
       participantCount,
       userId,
