@@ -1,17 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { sessions, sessionMedia, swipes } from '@/db/schema';
+import { sessions, sessionMedia } from '@/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import {
-  getParticipantCount,
   addSessionMatch,
   cacheWinner,
   acquireSessionLock,
   releaseSessionLock,
 } from '@/modules/redis';
 import { getAuthenticatedParticipant } from '@/modules/auth';
-import { resolveEndSession } from '@/modules/sessions/resolve';
+import { resolveSessionOutcome } from '@/modules/sessions/resolve';
 
 type WinnerMedia = {
   id: string;
@@ -109,35 +108,7 @@ export async function POST(
         );
       }
 
-      const [mediaItems, swipeRecords, participantCount] = await Promise.all([
-        db.query.sessionMedia.findMany({
-          where: eq(sessionMedia.sessionId, sessionId),
-          orderBy: (sessionMedia, { asc }) => [asc(sessionMedia.addedAt)],
-        }),
-        db.query.swipes.findMany({
-          where: eq(swipes.sessionId, sessionId),
-        }),
-        getParticipantCount(sessionId),
-      ]);
-
-      const mediaIds = new Set(mediaItems.map((m) => m.id));
-      const likeCounts = new Map<string, number>();
-      for (const media of mediaItems) {
-        likeCounts.set(media.id, 0);
-      }
-      for (const swipe of swipeRecords) {
-        if (swipe.vote === 'LIKE' && mediaIds.has(swipe.mediaId)) {
-          likeCounts.set(
-            swipe.mediaId,
-            (likeCounts.get(swipe.mediaId) ?? 0) + 1
-          );
-        }
-      }
-
-      const { newStatus, winningMediaId, candidateIds } = resolveEndSession(
-        likeCounts,
-        participantCount
-      );
+      const { newStatus, winningMediaId, candidateIds } = await resolveSessionOutcome(sessionId);
 
       if (candidateIds.length > 0) {
         await db

@@ -1,5 +1,10 @@
+import { eq } from 'drizzle-orm';
+import { db } from '@/db';
+import { sessionMedia, swipes } from '@/db/schema';
+import { getParticipantCount } from '@/modules/redis';
+
 export type ResolveEndSessionResult = {
-  newStatus: 'COMPLETED' | 'HEAD_TO_HEAD_ACTIVE';
+  newStatus: 'COMPLETED' | 'HEAD_TO_HEAD_ACTIVE' | 'DEADLINE_RESOLVED';
   winningMediaId: string | null;
   topIds: string[];
   consensusIds: string[];
@@ -28,25 +33,74 @@ export function resolveEndSession(
     }
   }
 
-  let winningMediaId: string | null = null;
-  let newStatus: 'COMPLETED' | 'HEAD_TO_HEAD_ACTIVE';
-
-  if (consensusIds.length === 1) {
-    winningMediaId = consensusIds[0];
-    newStatus = 'COMPLETED';
-  } else if (topIds.length === 1) {
-    winningMediaId = topIds[0];
-    newStatus = 'COMPLETED';
-  } else {
-    newStatus = 'HEAD_TO_HEAD_ACTIVE';
+  if (maxLikes === 0) {
+    return {
+      newStatus: 'DEADLINE_RESOLVED',
+      winningMediaId: null,
+      topIds,
+      consensusIds,
+      candidateIds: [],
+    };
   }
 
-  const candidateIds =
-    newStatus === 'HEAD_TO_HEAD_ACTIVE'
-      ? topIds
-      : winningMediaId
-        ? [winningMediaId]
-        : [];
+  if (consensusIds.length === 1) {
+    return {
+      newStatus: 'COMPLETED',
+      winningMediaId: consensusIds[0],
+      topIds,
+      consensusIds,
+      candidateIds: [consensusIds[0]],
+    };
+  }
 
-  return { newStatus, winningMediaId, topIds, consensusIds, candidateIds };
+  if (topIds.length === 1) {
+    return {
+      newStatus: 'COMPLETED',
+      winningMediaId: topIds[0],
+      topIds,
+      consensusIds,
+      candidateIds: [topIds[0]],
+    };
+  }
+
+  const ranked = [...likeCounts.entries()]
+    .filter(([, count]) => count > 0)
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 5)
+    .map(([mediaId]) => mediaId);
+
+  return {
+    newStatus: 'HEAD_TO_HEAD_ACTIVE',
+    winningMediaId: null,
+    topIds,
+    consensusIds,
+    candidateIds: ranked,
+  };
+}
+
+export async function resolveSessionOutcome(
+  sessionId: string
+): Promise<ResolveEndSessionResult> {
+  const [mediaItems, swipeRecords, participantCount] = await Promise.all([
+    db.query.sessionMedia.findMany({
+      where: eq(sessionMedia.sessionId, sessionId),
+    }),
+    db.query.swipes.findMany({
+      where: eq(swipes.sessionId, sessionId),
+    }),
+    getParticipantCount(sessionId),
+  ]);
+
+  const mediaIds = new Set(mediaItems.map((m) => m.id));
+  const likeCounts = new Map<string, number>();
+  for (const media of mediaItems) {
+    likeCounts.set(media.id, 0);
+  }
+  for (const swipe of swipeRecords) {
+    if (swipe.vote === 'LIKE' && mediaIds.has(swipe.mediaId)) {
+      likeCounts.set(swipe.mediaId, (likeCounts.get(swipe.mediaId) ?? 0) + 1);
+    }
+  }
+
+  return resolveEndSession(likeCounts, participantCount);
 }

@@ -5,8 +5,10 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
 import { getAuthenticatedParticipant } from '@/modules/auth';
+import { resolveSessionOutcome } from '@/modules/sessions/resolve';
 import {
   getSessionMatches,
+  addSessionMatch,
   acquireSessionLock,
   releaseSessionLock,
   cacheWinner,
@@ -57,17 +59,13 @@ async function resolveDeadlineIfExpired(
     const matches = await getSessionMatches(session.id);
     let newStatus = session.status;
     let winnerId: string | null = session.finalWinningMediaId;
+    let candidateIds: string[] = [];
 
     if (session.status === 'SWIPING_ACTIVE') {
-      if (matches.length >= 2) {
-        newStatus = 'HEAD_TO_HEAD_ACTIVE';
-      } else if (matches.length === 1) {
-        newStatus = 'COMPLETED';
-        winnerId = matches[0];
-      } else {
-        newStatus = 'DEADLINE_RESOLVED';
-        winnerId = null;
-      }
+      const outcome = await resolveSessionOutcome(session.id);
+      newStatus = outcome.newStatus;
+      winnerId = outcome.winningMediaId;
+      candidateIds = outcome.candidateIds;
     } else {
       // HEAD_TO_HEAD_ACTIVE deadline resolution
       const matchIds = matches;
@@ -97,6 +95,18 @@ async function resolveDeadlineIfExpired(
           winnerId = null;
         }
       }
+    }
+
+    if (candidateIds.length > 0) {
+      await db
+        .update(sessionMedia)
+        .set({ isMatched: 1 })
+        .where(and(
+          eq(sessionMedia.sessionId, session.id),
+          inArray(sessionMedia.id, candidateIds)
+        ));
+
+      await Promise.all(candidateIds.map((mediaId) => addSessionMatch(session.id, mediaId)));
     }
 
     await db
