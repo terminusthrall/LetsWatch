@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { swipes, sessionMedia, sessions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
 import { 
   incrementMediaLike, 
   getMediaLikeCount, 
@@ -15,6 +16,11 @@ import {
   releaseSessionLock,
 } from '@/modules/redis';
 import { getAuthenticatedParticipant } from '@/modules/auth';
+
+const submitSwipeSchema = z.object({
+  mediaId: z.string().uuid(),
+  vote: z.enum(['LIKE', 'PASS']),
+});
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
   const [mediaRecords, swipeRecords, participants] = await Promise.all([
@@ -92,16 +98,14 @@ export async function POST(
     const { userId } = auth;
 
     const body = await request.json();
-    const { mediaId, vote } = body;
+    const parsed = submitSwipeSchema.safeParse(body);
 
-    // Validate input
-    if (!mediaId || !vote) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join(', ');
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    if (vote !== 'LIKE' && vote !== 'PASS') {
-      return NextResponse.json({ error: 'Invalid vote value' }, { status: 400 });
-    }
+    const { mediaId, vote } = parsed.data;
 
     // Check if session exists and is active
     const session = await db.query.sessions.findFirst({
@@ -114,6 +118,18 @@ export async function POST(
 
     if (session.status !== 'SWIPING_ACTIVE') {
       return NextResponse.json({ error: 'Session is not in swiping phase' }, { status: 400 });
+    }
+
+    // Verify the media belongs to this session
+    const mediaItem = await db.query.sessionMedia.findFirst({
+      where: and(
+        eq(sessionMedia.id, mediaId),
+        eq(sessionMedia.sessionId, sessionId)
+      ),
+    });
+
+    if (!mediaItem) {
+      return NextResponse.json({ error: 'Media not found in session' }, { status: 404 });
     }
 
     // Record swipe in database, ignoring duplicate submissions
