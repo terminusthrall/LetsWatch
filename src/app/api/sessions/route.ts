@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
       hostId: userId,
       title: title || 'Movie Night',
       joinCode,
-      status: 'SWIPING_ACTIVE',
+      status: 'LOBBY',
       deadlineAt,
     });
 
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
       userId,
       title: title || 'Movie Night',
       joinCode,
-      status: 'SWIPING_ACTIVE',
+      status: 'LOBBY',
       deadlineAt: deadlineAt.toISOString(),
     });
 

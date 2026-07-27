@@ -52,6 +52,14 @@ function getSessionWinnerKey(sessionId: string): string {
   return `${SESSION_WINNER_PREFIX}${sessionId}`;
 }
 
+function getSessionSnapshotCountsKey(sessionId: string): string {
+  return `${SESSION_PREFIX}${sessionId}:snapshot:counts`;
+}
+
+function getSessionSnapshotParticipantsKey(sessionId: string): string {
+  return `${SESSION_PREFIX}${sessionId}:snapshot:participants`;
+}
+
 const DELETE_IF_MATCHES_SCRIPT = `
   if redis.call("get", KEYS[1]) == ARGV[1] then
     return redis.call("del", KEYS[1])
@@ -129,12 +137,93 @@ export async function getSessionParticipants(sessionId: string): Promise<string[
 }
 
 /**
- * Get participant count for a session
+ * Get participant count for a session. Prefers the immutable snapshot created
+ * when the session starts so the swiping denominator cannot change mid-session.
  * @param sessionId - The session ID
  */
 export async function getParticipantCount(sessionId: string): Promise<number> {
+  const snapshotCount = await redis.hget(getSessionSnapshotCountsKey(sessionId), 'participantCount');
+  if (snapshotCount != null) {
+    const parsed = Number(snapshotCount);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+
   const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
   return await redis.scard(participantsKey);
+}
+
+/**
+ * Persist an immutable snapshot of participant/media counts and the participant
+ * list used for unanimous-match evaluation.
+ * @param sessionId - The session ID
+ * @param participantIds - Final list of participant user IDs
+ * @param mediaCount - Final number of media items in the pool
+ * @param ttl - Time to live in seconds
+ */
+export async function setSessionSnapshot(
+  sessionId: string,
+  participantIds: string[],
+  mediaCount: number,
+  ttl: number
+): Promise<void> {
+  const countsKey = getSessionSnapshotCountsKey(sessionId);
+  const snapshotParticipantsKey = getSessionSnapshotParticipantsKey(sessionId);
+  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
+
+  await redis.del(snapshotParticipantsKey);
+  if (participantIds.length > 0) {
+    const [first, ...rest] = participantIds;
+    await redis.sadd(snapshotParticipantsKey, first, ...rest);
+  }
+  await redis.expire(snapshotParticipantsKey, ttl);
+
+  await redis.hset(countsKey, { participantCount: participantIds.length, mediaCount });
+  await redis.expire(countsKey, ttl);
+
+  // Keep the live participants set in sync with the snapshot at start time
+  await redis.del(participantsKey);
+  if (participantIds.length > 0) {
+    const [first, ...rest] = participantIds;
+    await redis.sadd(participantsKey, first, ...rest);
+  }
+  await redis.expire(participantsKey, ttl);
+}
+
+/**
+ * Get the snapshot participant count if one has been stored.
+ * @param sessionId - The session ID
+ */
+export async function getSnapshotParticipantCount(sessionId: string): Promise<number | null> {
+  const value = await redis.hget(getSessionSnapshotCountsKey(sessionId), 'participantCount');
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Get the snapshot media count if one has been stored.
+ * @param sessionId - The session ID
+ */
+export async function getSnapshotMediaCount(sessionId: string): Promise<number | null> {
+  const value = await redis.hget(getSessionSnapshotCountsKey(sessionId), 'mediaCount');
+  if (value == null) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+/**
+ * Check whether every snapshot participant has liked the given media item.
+ * @param sessionId - The session ID
+ * @param mediaId - The media ID
+ */
+export async function isMediaLikedByAllSnapshotParticipants(sessionId: string, mediaId: string): Promise<boolean> {
+  const participantCount = await getSnapshotParticipantCount(sessionId);
+  if (participantCount == null || participantCount === 0) return false;
+
+  const snapshotParticipantsKey = getSessionSnapshotParticipantsKey(sessionId);
+  const likesKey = getSessionMediaLikesKey(sessionId, mediaId);
+  const likedByParticipants = await redis.sinter(snapshotParticipantsKey, likesKey);
+  return likedByParticipants.length === participantCount;
 }
 
 /**

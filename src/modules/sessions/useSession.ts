@@ -241,6 +241,8 @@ export function useSession(sessionId: string) {
     }
   }, [sessionId, session, refetch]);
 
+  const startSession = useStartSession(sessionId, session, refetch, setError);
+
   return {
     session,
     error,
@@ -251,6 +253,43 @@ export function useSession(sessionId: string) {
     isJoining,
     swipe,
     endSession,
+    startSession,
     refetch,
   };
+}
+
+function useStartSession(
+  sessionId: string,
+  session: SessionDetailResponse | null,
+  refetch: () => Promise<void>,
+  setError: (error: string | null) => void
+) {
+  return useCallback(async () => {
+    if (!sessionId || !session) return;
+    if (session.userId !== session.session.hostId) {
+      setError('Only the host can start the session.');
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/start`, {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+
+      if (res.status === 403) {
+        setError('Only the host can start the session.');
+        return;
+      }
+
+      if (!res.ok) {
+        const data = (await res.json()) as { error?: string };
+        throw new Error(data.error || 'Failed to start session');
+      }
+
+      await refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Something went wrong');
+    }
+  }, [sessionId, session, refetch, setError]);
 }

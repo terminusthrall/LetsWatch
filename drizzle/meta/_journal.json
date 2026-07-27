@@ -22,6 +22,13 @@
       "when": 1785192863840,
       "tag": "0002_dusty_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785194345623,
+      "tag": "0003_fuzzy_shotgun",
+      "breakpoints": true
     }
   ]
 }

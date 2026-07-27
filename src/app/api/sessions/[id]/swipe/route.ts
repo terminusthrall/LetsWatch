@@ -5,8 +5,9 @@ import { eq, and, count } from 'drizzle-orm';
 import { submitSwipeBodySchema, type SwipeResponse } from '@/types/api';
 import { 
   addMediaLike, 
-  getMediaLikeCount, 
-  isMediaLikedByAllParticipants,
+  getMediaLikeCount,
+  getSnapshotParticipantCount,
+  isMediaLikedByAllSnapshotParticipants,
   addSessionMatch,
   acquireEvaluationLock,
   releaseEvaluationLock,
@@ -17,7 +18,6 @@ import {
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
   getSessionParticipants,
-  getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
 
@@ -149,19 +149,23 @@ export async function POST(
     if (vote === 'LIKE') {
       const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
       const likeCount = await addMediaLike(sessionId, mediaId, userId, ttl);
-      const participantCount = await getParticipantCount(sessionId);
 
-      // Check if all participants have liked this media
-      if (likeCount >= participantCount) {
+      // Use the immutable snapshot created when the session started so the
+      // denominator cannot shift mid-swipe. A unanimous match requires at least
+      // two participants (prevents the host from matching with themselves).
+      const snapshotCount = await getSnapshotParticipantCount(sessionId);
+      const participantCount = snapshotCount ?? (await getSessionParticipants(sessionId)).length;
+
+      if (participantCount >= 2 && likeCount >= participantCount) {
         // Acquire evaluation lock to prevent race conditions
         const evaluationToken = await acquireEvaluationLock(sessionId);
 
         if (evaluationToken) {
           try {
-            // Double-check the like count and verify every participant is a member
+            // Double-check the like count and verify every snapshot participant is a member
             const [currentLikeCount, allParticipantsLiked] = await Promise.all([
               getMediaLikeCount(sessionId, mediaId),
-              isMediaLikedByAllParticipants(sessionId, mediaId),
+              isMediaLikedByAllSnapshotParticipants(sessionId, mediaId),
             ]);
 
             if (currentLikeCount >= participantCount && allParticipantsLiked) {
