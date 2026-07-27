@@ -74,14 +74,15 @@ import { z } from 'zod';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
 export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'DEADLINE_RESOLVED', 'COMPLETED']);  
+// `DEADLINE_RESOLVED` applies once the deadline passes and no winning media can be determined (no likes or an unresolved head-to-head tie).
 
 // 1. Users & Accounts Schema (Ephemeral Guests & Pro Subscribers)
 export const users = pgTable('users', {  
   id: uuid('id').primaryKey().defaultRandom(),  
   displayName: varchar('display_name', { length: 50 }).notNull(),  
   email: varchar('email', { length: 255 }),
-  isGuest: integer('is_guest').default(1).notNull(), // 1 = Ephemeral Guest, 0 = Registered Account
-  isProSubscriber: integer('is_pro_subscriber').default(0).notNull(), // 1 = Paid Ad-Free / Pro Host
+  isGuest: boolean('is_guest').default(true).notNull(), // true = Ephemeral Guest, false = Registered Account
+  isProSubscriber: boolean('is_pro_subscriber').default(false).notNull(), // true = Paid Ad-Free / Pro Host
   createdAt: timestamp('created_at').defaultNow().notNull(),  
 });  
 
@@ -178,12 +179,12 @@ To avoid read/write lock contention on PostgreSQL during swipe bursts, the app u
 
 #### 5.3.1 Key-Value Data Structures & Naming Conventions
 
-- **`session_participants:{sessionId}`** — Redis Set of `userId` strings (SADD, SMEMBERS, SCARD). TTL = `max(24h, remaining-to-deadline + 24h)`.
-- **`session:{sessionId}:media:{mediaId}:likes`** — Redis Set of `userId` strings who liked the media. Count is read via `SCARD` and verified with `SINTER` against the participant set.
-- **`session_matches:{sessionId}`** — Redis Set of matched `sessionMedia.id` strings.
+- **`session_participants:{sessionId}`** — Redis Set of `userId` strings (SADD, SMEMBERS, SCARD). TTL = `max(24h, remaining-to-deadline + 24h)` via `getSessionRedisTtlSeconds`.
+- **`session:{sessionId}:media:{mediaId}:likes`** — Redis Set of `userId` strings who liked the media. Count is read via `SCARD` and verified with `SINTER` against the participant set. TTL set by caller (default 3600s).
+- **`session_matches:{sessionId}`** — Redis Set of matched `sessionMedia.id` strings. TTL set by caller (default 3600s).
 - **`session_winner:{sessionId}`** — Redis String/JSON cached winner payload. TTL 24h.
-- **`session_lock:{sessionId}`** — Distributed lock string (`SET NX EX <ttl>`) for state transitions and host end.
-- **`session_lock:evaluation:{sessionId}`** — Separate lock for swipe match evaluation (`acquireEvaluationLock`).
+- **`session_lock:{sessionId}`** — Distributed lock string (`SET NX EX <ttl>`) for state transitions and host end. TTL set by caller (default 30s).
+- **`session_lock:evaluation:{sessionId}`** — Separate lock for swipe match evaluation (`acquireEvaluationLock`). TTL set by caller (default 10s).
 
 #### 5.3.2 Counter vs. Set Implementation
 
@@ -300,7 +301,7 @@ const submitSwipeSchema = z.object({
 - Verifies the media belongs to the session and that the session is `SWIPING_ACTIVE`.
 - Inserts the swipe with `ON CONFLICT DO NOTHING` on `(sessionId, userId, mediaId)`. A duplicate returns `{ success: true }`.
 - On `LIKE`, adds `userId` to the Redis set `session:{sessionId}:media:{mediaId}:likes`.
-- If the like set covers every participant, marks `session_media.isMatched = 1` and adds the media to `session_matches`.
+- If the like set covers every participant, marks `session_media.isMatched = true` and adds the media to `session_matches`.
 - If the user has voted on every media item, transitions the session: `COMPLETED` for a single match, otherwise `HEAD_TO_HEAD_ACTIVE`.
 
 **Response Payload (200 OK):**
@@ -384,7 +385,7 @@ const submitSwipeSchema = z.object({
 - Calls `resolveSessionOutcome` to compute like counts from the `swipes` table.
 - If one media has unanimous likes: `COMPLETED` with that winner.
 - Otherwise, if one media has the sole top like count: `COMPLETED` with that winner.
-- Otherwise, the top 5 liked media are marked `isMatched = 1` and added to `session_matches`; status becomes `HEAD_TO_HEAD_ACTIVE`.
+- Otherwise, the top 5 liked media are marked `isMatched = true` and added to `session_matches`; status becomes `HEAD_TO_HEAD_ACTIVE`.
 - If there are zero likes, status becomes `DEADLINE_RESOLVED` with no winner.
 - Caches the winner metadata in Redis.
 
@@ -411,7 +412,7 @@ const headToHeadVoteSchema = z.object({
 **Execution Flow:**
 - Rejects if `preferredMediaId === opponentMediaId`.
 - On the first vote, transitions `SWIPING_ACTIVE` → `HEAD_TO_HEAD_ACTIVE`.
-- Resolves the tie-breaker pool from the Redis `session_matches` set, falling back to `session_media.isMatched = 1`.
+- Resolves the tie-breaker pool from the Redis `session_matches` set, falling back to `session_media.isMatched = true`.
 - If fewer than two matched media remain, completes the session immediately with the sole candidate or `null`.
 - Upserts the participant’s vote for the unordered pair.
 - Recomputes pairwise win totals with `computeHeadToHeadStandings`.

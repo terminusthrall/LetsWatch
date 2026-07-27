@@ -167,7 +167,7 @@ export async function POST(
             if (currentLikeCount >= participantCount && allParticipantsLiked) {
               // Update session_media.isMatched in database
               await db.update(sessionMedia)
-                .set({ isMatched: 1 })
+                .set({ isMatched: true })
                 .where(and(
                   eq(sessionMedia.id, mediaId),
                   eq(sessionMedia.sessionId, sessionId)

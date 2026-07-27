@@ -102,7 +102,7 @@ export async function POST(
       if (candidateIds.length > 0) {
         await db
           .update(sessionMedia)
-          .set({ isMatched: 1 })
+          .set({ isMatched: true })
           .where(
             and(
               eq(sessionMedia.sessionId, sessionId),

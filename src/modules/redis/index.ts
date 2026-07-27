@@ -22,6 +22,21 @@ const redis = new Proxy({} as Redis, {
   },
 });
 
+/**
+ * Redis keys owned by this module:
+ *
+ * - session_participants:{sessionId} — Set of userId strings. TTL set by caller
+ *   (participants.ts passes getSessionRedisTtlSeconds(deadlineAt), default 3600s).
+ * - session:{sessionId}:media:{mediaId}:likes — Set of userId strings who liked the media.
+ *   TTL set by caller (default 3600s).
+ * - session_matches:{sessionId} — Set of matched sessionMedia.id strings.
+ *   TTL set by caller (default 3600s).
+ * - session_winner:{sessionId} — Cached winner JSON/string. TTL 24h.
+ * - session_lock:{sessionId} — Distributed lock string. TTL set by caller (default 30s).
+ * - session_lock:evaluation:{sessionId} — Distributed lock for swipe match evaluation.
+ *   TTL set by caller (default 10s).
+ */
+
 // Session State Engine Keys
 const SESSION_PREFIX = 'session:';
 const SESSION_LOCK_PREFIX = 'session_lock:';

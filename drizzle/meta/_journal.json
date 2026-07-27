@@ -15,6 +15,13 @@
       "when": 1785115874609,
       "tag": "0001_chunky_zuras",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785192863840,
+      "tag": "0002_dusty_lady_ursula",
+      "breakpoints": true
     }
   ]
 }

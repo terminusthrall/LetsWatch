@@ -31,7 +31,7 @@ export async function GET(
         posterPath: item.posterPath,
         releaseYear: item.releaseYear,
         overview: item.overview,
-        isMatched: item.isMatched === 1,
+        isMatched: item.isMatched,
       })),
     };
 

@@ -6,10 +6,24 @@ import {
   mapTVToSessionMedia,
   type TMDBTV,
 } from '@/modules/tmdb';
+import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 import { type MediaSearchResult, type MediaSearchResponse } from '@/types/api';
 
 export async function GET(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const { allowed } = await checkRateLimit(`media-search:${ip}`, {
+      requests: 30,
+      window: '1 m',
+    });
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      );
+    }
+
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('query')?.trim() ?? '';
     const mediaType = searchParams.get('mediaType') ?? 'movie';

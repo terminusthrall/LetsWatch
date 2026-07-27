@@ -160,6 +160,7 @@ export const sessionStateResponseSchema = z.object({
     finalWinningMediaId: z.string().nullable(),
   }),
   participants: z.array(participantSchema),
+  mySwipedMediaIds: z.array(z.string()),
   matches: z.array(z.string()),
   participantCount: z.number(),
   userId: z.string(),
