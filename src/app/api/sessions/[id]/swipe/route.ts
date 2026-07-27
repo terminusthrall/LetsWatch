@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { swipes, sessionMedia, sessions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
 import { 
   incrementMediaLike, 
   getMediaLikeCount, 
@@ -12,11 +13,17 @@ import {
   acquireSessionLock,
   releaseSessionLock,
 } from '@/modules/redis';
+import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
   getSessionParticipants,
   getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
+
+const submitSwipeSchema = z.object({
+  mediaId: z.string().uuid(),
+  vote: z.enum(['LIKE', 'PASS']),
+});
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
   const [mediaRecords, swipeRecords, participants] = await Promise.all([
@@ -87,47 +94,21 @@ export async function POST(
     const sessionId = (await params).id;
 
     // Authenticate participant via cookie
-    const cookie = request.cookies.get('user_session')?.value;
-    if (!cookie) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = await getAuthenticatedParticipant(request, sessionId);
+    if (auth instanceof NextResponse) {
+      return auth;
     }
-
-    let userId: string;
-    let cookieSessionId: string;
-    try {
-      const parsed = JSON.parse(cookie) as { userId?: unknown; sessionId?: unknown };
-      if (
-        typeof parsed.userId !== 'string' ||
-        typeof parsed.sessionId !== 'string'
-      ) {
-        throw new Error('Invalid cookie');
-      }
-      userId = parsed.userId;
-      cookieSessionId = parsed.sessionId;
-    } catch {
-      return NextResponse.json({ error: 'Invalid session cookie' }, { status: 401 });
-    }
-
-    if (cookieSessionId !== sessionId) {
-      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
-    }
-
-    const participants = await getSessionParticipants(sessionId);
-    if (!participants.includes(userId)) {
-      return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
-    }
+    const { userId } = auth;
 
     const body = await request.json();
-    const { mediaId, vote } = body;
+    const parsed = submitSwipeSchema.safeParse(body);
 
-    // Validate input
-    if (!mediaId || !vote) {
-      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join(', ');
+      return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    if (vote !== 'LIKE' && vote !== 'PASS') {
-      return NextResponse.json({ error: 'Invalid vote value' }, { status: 400 });
-    }
+    const { mediaId, vote } = parsed.data;
 
     // Check if session exists and is active
     const session = await db.query.sessions.findFirst({
@@ -140,6 +121,18 @@ export async function POST(
 
     if (session.status !== 'SWIPING_ACTIVE') {
       return NextResponse.json({ error: 'Session is not in swiping phase' }, { status: 400 });
+    }
+
+    // Verify the media belongs to this session
+    const mediaItem = await db.query.sessionMedia.findFirst({
+      where: and(
+        eq(sessionMedia.id, mediaId),
+        eq(sessionMedia.sessionId, sessionId)
+      ),
+    });
+
+    if (!mediaItem) {
+      return NextResponse.json({ error: 'Media not found in session' }, { status: 404 });
     }
 
     // Record swipe in database, ignoring duplicate submissions

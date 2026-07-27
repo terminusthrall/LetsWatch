@@ -3,15 +3,21 @@ import { db } from '@/db';
 import { headToHeadVotes, sessions, sessionMedia } from '@/db/schema';
 import { eq, and, or } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
+import { z } from 'zod';
 import {
   setSessionState,
   getSessionMatches,
 } from '@/modules/redis';
+import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
-  getSessionParticipants,
   getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
+
+const headToHeadVoteSchema = z.object({
+  preferredMediaId: z.string().uuid(),
+  opponentMediaId: z.string().uuid(),
+});
 
 type WinnerMedia = {
   id: string;
@@ -67,48 +73,21 @@ export async function POST(
     const sessionId = (await params).id;
 
     // Authenticate participant via cookie
-    const cookie = request.cookies.get('user_session')?.value;
-    if (!cookie) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = await getAuthenticatedParticipant(request, sessionId);
+    if (auth instanceof NextResponse) {
+      return auth;
     }
-
-    let userId: string;
-    let cookieSessionId: string;
-    try {
-      const parsed = JSON.parse(cookie) as {
-        userId?: unknown;
-        sessionId?: unknown;
-      };
-      if (
-        typeof parsed.userId !== 'string' ||
-        typeof parsed.sessionId !== 'string'
-      ) {
-        throw new Error('Invalid cookie');
-      }
-      userId = parsed.userId;
-      cookieSessionId = parsed.sessionId;
-    } catch {
-      return NextResponse.json({ error: 'Invalid session cookie' }, { status: 401 });
-    }
-
-    if (cookieSessionId !== sessionId) {
-      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
-    }
-
-    const participants = await getSessionParticipants(sessionId);
-    if (!participants.includes(userId)) {
-      return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
-    }
+    const { userId } = auth;
 
     const body = await request.json();
-    const { preferredMediaId, opponentMediaId } = body;
+    const parsed = headToHeadVoteSchema.safeParse(body);
 
-    if (!preferredMediaId || !opponentMediaId) {
-      return NextResponse.json(
-        { error: 'Preferred and opponent media are required' },
-        { status: 400 }
-      );
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join(', ');
+      return NextResponse.json({ error: message }, { status: 400 });
     }
+
+    const { preferredMediaId, opponentMediaId } = parsed.data;
 
     if (preferredMediaId === opponentMediaId) {
       return NextResponse.json(

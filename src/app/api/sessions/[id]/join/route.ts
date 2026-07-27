@@ -2,12 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { z } from 'zod';
 import { setSessionState } from '@/modules/redis';
 import {
   addSessionParticipant,
   getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
+import { mintSessionToken } from '@/modules/auth';
+
+const joinBodySchema = z.object({
+  displayName: z.string().trim().min(1).max(50),
+});
 
 export async function POST(
   request: NextRequest,
@@ -16,12 +22,14 @@ export async function POST(
   try {
     const sessionId = (await params).id;
     const body = await request.json();
-    const { displayName } = body;
+    const parsed = joinBodySchema.safeParse(body);
 
-    // Validate input
-    if (!displayName) {
-      return NextResponse.json({ error: 'Display name is required' }, { status: 400 });
+    if (!parsed.success) {
+      const message = parsed.error.issues.map((issue) => issue.message).join(', ');
+      return NextResponse.json({ error: message }, { status: 400 });
     }
+
+    const { displayName } = parsed.data;
 
     // Check if session exists
     const session = await db.query.sessions.findFirst({
@@ -56,7 +64,8 @@ export async function POST(
       participantCount,
     }, ttl);
 
-    // Set cookie with user and session info
+    // Set cookie with signed session token
+    const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json({
       sessionId,
       userId,
@@ -66,7 +75,7 @@ export async function POST(
       participantCount,
     });
 
-    response.cookies.set('user_session', JSON.stringify({ userId, sessionId }), {
+    response.cookies.set('user_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
