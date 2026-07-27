@@ -9,6 +9,8 @@ import {
 import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 import { type MediaSearchResult, type MediaSearchResponse } from '@/types/api';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const ip = getClientIp(request);

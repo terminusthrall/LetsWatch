@@ -1,5 +1,41 @@
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
+function getApiToken(): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('@/modules/tmdb can only be used on the server');
+  }
+
+  const token = process.env.TMDB_API_KEY;
+  if (!token) {
+    throw new Error('TMDB_API_KEY environment variable is not set');
+  }
+
+  return token;
+}
+
+async function fetchFromTMDB<T>(
+  path: string,
+  params?: URLSearchParams
+): Promise<T> {
+  const token = getApiToken();
+  const query = params ? `?${params.toString()}` : '';
+  const url = `${TMDB_BASE_URL}${path}${query}`;
+
+  const response = await fetch(url, {
+    cache: 'no-store',
+    headers: {
+      accept: 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`TMDB API error: ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
 export interface TMDBMovie {
   id: number;
   title: string;
@@ -38,51 +74,6 @@ export interface SessionMediaRecord {
   voteAverage?: number;
 }
 
-function getApiToken(): string {
-  if (typeof window !== 'undefined') {
-    throw new Error('@/modules/tmdb can only be used on the server');
-  }
-
-  const token = process.env.TMDB_API_KEY;
-  if (!token) {
-    throw new Error('TMDB_API_KEY environment variable is not set');
-  }
-
-  return token;
-}
-
-interface TmdbFetchOptions {
-  revalidate?: number;
-}
-
-async function tmdbFetch<T>(
-  path: string,
-  params?: URLSearchParams,
-  options: TmdbFetchOptions = {}
-): Promise<T> {
-  const token = getApiToken();
-  const query = params ? `?${params.toString()}` : '';
-
-  const init: RequestInit & { next?: { revalidate?: number } } = {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json;charset=utf-8',
-    },
-  };
-
-  if (options.revalidate !== undefined) {
-    init.next = { revalidate: options.revalidate };
-  }
-
-  const response = await fetch(`${TMDB_BASE_URL}${path}${query}`, init);
-
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
 export async function discoverMovies(options: {
   page?: number;
   language?: string;
@@ -97,7 +88,7 @@ export async function discoverMovies(options: {
   if (options.with_genres) params.append('with_genres', options.with_genres);
   if (options.year) params.append('year', options.year.toString());
 
-  return tmdbFetch('/discover/movie', params, { revalidate: 3600 });
+  return fetchFromTMDB('/discover/movie', params);
 }
 
 export async function discoverTV(options: {
@@ -115,7 +106,7 @@ export async function discoverTV(options: {
   if (options.first_air_date_year)
     params.append('first_air_date_year', options.first_air_date_year.toString());
 
-  return tmdbFetch('/discover/tv', params, { revalidate: 3600 });
+  return fetchFromTMDB('/discover/tv', params);
 }
 
 export async function searchMovies(
@@ -135,7 +126,7 @@ export async function searchMovies(
     params.append('include_adult', String(options.include_adult));
   if (options.year) params.append('year', options.year.toString());
 
-  return tmdbFetch('/search/movie', params, { revalidate: 3600 });
+  return fetchFromTMDB('/search/movie', params);
 }
 
 export async function searchTV(
@@ -156,7 +147,7 @@ export async function searchTV(
   if (options.first_air_date_year)
     params.append('first_air_date_year', options.first_air_date_year.toString());
 
-  return tmdbFetch('/search/tv', params, { revalidate: 3600 });
+  return fetchFromTMDB('/search/tv', params);
 }
 
 export interface TMDBMovieDetails extends TMDBMovie {
@@ -174,11 +165,11 @@ export interface TMDBTVDetails extends TMDBTV {
 export async function getMovieDetails(
   tmdbId: string
 ): Promise<TMDBMovieDetails> {
-  return tmdbFetch(`/movie/${tmdbId}`, undefined, { revalidate: 86400 });
+  return fetchFromTMDB(`/movie/${tmdbId}`);
 }
 
 export async function getTVDetails(tmdbId: string): Promise<TMDBTVDetails> {
-  return tmdbFetch(`/tv/${tmdbId}`, undefined, { revalidate: 86400 });
+  return fetchFromTMDB(`/tv/${tmdbId}`);
 }
 
 export function getMediaDetails(

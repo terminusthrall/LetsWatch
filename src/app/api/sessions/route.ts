@@ -8,6 +8,7 @@ import { mintSessionToken } from '@/modules/auth';
 import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 import { createSessionBodySchema, type CreateSessionResponse } from '@/types/api';
 
+export const dynamic = 'force-dynamic';
 
 function generateJoinCode(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
