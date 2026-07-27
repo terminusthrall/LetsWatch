@@ -27,7 +27,10 @@ const SESSION_PREFIX = 'session:';
 const SESSION_LOCK_PREFIX = 'session_lock:';
 const SESSION_PARTICIPANTS_PREFIX = 'session_participants:';
 const SESSION_MATCHES_PREFIX = 'session_matches:';
-const SESSION_MEDIA_LIKES_PREFIX = 'session_media_likes:';
+
+function getSessionMediaLikesKey(sessionId: string, mediaId: string): string {
+  return `${SESSION_PREFIX}${sessionId}:media:${mediaId}:likes`;
+}
 
 /**
  * Acquire a distributed lock for a session
@@ -138,17 +141,19 @@ export async function getSessionMatches(sessionId: string): Promise<string[]> {
 }
 
 /**
- * Increment like count for a media item in a session
+ * Add a user's LIKE for a media item in a session
  * @param sessionId - The session ID
  * @param mediaId - The media ID
+ * @param userId - The user ID that liked the media
  * @param ttl - Time to live in seconds (default: 3600)
  * @returns The new like count
  */
-export async function incrementMediaLike(sessionId: string, mediaId: string, ttl: number = 3600): Promise<number> {
-  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
-  const result = await redis.incr(likesKey);
+export async function addMediaLike(sessionId: string, mediaId: string, userId: string, ttl: number = 3600): Promise<number> {
+  const likesKey = getSessionMediaLikesKey(sessionId, mediaId);
+  await redis.sadd(likesKey, userId);
+  const count = await redis.scard(likesKey);
   await redis.expire(likesKey, ttl);
-  return result;
+  return count;
 }
 
 /**
@@ -157,9 +162,24 @@ export async function incrementMediaLike(sessionId: string, mediaId: string, ttl
  * @param mediaId - The media ID
  */
 export async function getMediaLikeCount(sessionId: string, mediaId: string): Promise<number> {
-  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
-  const count = await redis.get(likesKey);
-  return count ? parseInt(count as string, 10) : 0;
+  const likesKey = getSessionMediaLikesKey(sessionId, mediaId);
+  return await redis.scard(likesKey);
+}
+
+/**
+ * Check whether every active participant has liked the given media item.
+ * Uses SINTER between the participants set and the media likes set.
+ * @param sessionId - The session ID
+ * @param mediaId - The media ID
+ */
+export async function isMediaLikedByAllParticipants(sessionId: string, mediaId: string): Promise<boolean> {
+  const participantsKey = `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
+  const likesKey = getSessionMediaLikesKey(sessionId, mediaId);
+  const [participantCount, likedByParticipants] = await Promise.all([
+    redis.scard(participantsKey),
+    redis.sinter(participantsKey, likesKey),
+  ]);
+  return participantCount > 0 && likedByParticipants.length === participantCount;
 }
 
 /**
@@ -168,7 +188,7 @@ export async function getMediaLikeCount(sessionId: string, mediaId: string): Pro
  * @param mediaId - The media ID
  */
 export async function resetMediaLikeCount(sessionId: string, mediaId: string): Promise<void> {
-  const likesKey = `${SESSION_MEDIA_LIKES_PREFIX}${sessionId}:${mediaId}`;
+  const likesKey = getSessionMediaLikesKey(sessionId, mediaId);
   await redis.del(likesKey);
 }
 

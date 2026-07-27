@@ -4,8 +4,9 @@ import { swipes, sessionMedia, sessions } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
-  incrementMediaLike, 
+  addMediaLike, 
   getMediaLikeCount, 
+  isMediaLikedByAllParticipants,
   addSessionMatch,
   acquireEvaluationLock,
   releaseEvaluationLock,
@@ -156,10 +157,10 @@ export async function POST(
 
     let matchFound = false;
 
-    // If LIKE, increment Redis like count and check for unanimous match
+    // If LIKE, add userId to the media like set and check for unanimous match
     if (vote === 'LIKE') {
       const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
-      const likeCount = await incrementMediaLike(sessionId, mediaId, ttl);
+      const likeCount = await addMediaLike(sessionId, mediaId, userId, ttl);
       const participantCount = await getParticipantCount(sessionId);
 
       // Check if all participants have liked this media
@@ -169,10 +170,13 @@ export async function POST(
         
         if (lockAcquired) {
           try {
-            // Double-check the like count after acquiring lock
-            const currentLikeCount = await getMediaLikeCount(sessionId, mediaId);
+            // Double-check the like count and verify every participant is a member
+            const [currentLikeCount, allParticipantsLiked] = await Promise.all([
+              getMediaLikeCount(sessionId, mediaId),
+              isMediaLikedByAllParticipants(sessionId, mediaId),
+            ]);
             
-            if (currentLikeCount >= participantCount) {
+            if (currentLikeCount >= participantCount && allParticipantsLiked) {
               // Update session_media.isMatched in database
               await db.update(sessionMedia)
                 .set({ isMatched: 1 })
