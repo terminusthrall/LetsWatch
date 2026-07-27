@@ -11,6 +11,7 @@ import {
   acquireSessionLock,
   releaseSessionLock,
 } from '@/modules/redis';
+import { getAuthenticatedParticipant } from '@/modules/auth';
 
 type WinnerMedia = {
   id: string;
@@ -62,36 +63,11 @@ export async function POST(
   try {
     const sessionId = (await params).id;
 
-    const cookie = request.cookies.get('user_session')?.value;
-    if (!cookie) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = await getAuthenticatedParticipant(request, sessionId);
+    if (auth instanceof NextResponse) {
+      return auth;
     }
-
-    let userId: string;
-    let cookieSessionId: string;
-    try {
-      const parsed = JSON.parse(cookie) as {
-        userId?: unknown;
-        sessionId?: unknown;
-      };
-      if (
-        typeof parsed.userId !== 'string' ||
-        typeof parsed.sessionId !== 'string'
-      ) {
-        throw new Error('Invalid cookie');
-      }
-      userId = parsed.userId;
-      cookieSessionId = parsed.sessionId;
-    } catch {
-      return NextResponse.json(
-        { error: 'Invalid session cookie' },
-        { status: 401 }
-      );
-    }
-
-    if (cookieSessionId !== sessionId) {
-      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
-    }
+    const { userId } = auth;
 
     const session = await db.query.sessions.findFirst({
       where: eq(sessions.id, sessionId),
