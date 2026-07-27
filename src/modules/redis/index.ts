@@ -37,31 +37,40 @@ function getSessionWinnerKey(sessionId: string): string {
   return `${SESSION_WINNER_PREFIX}${sessionId}`;
 }
 
+const DELETE_IF_MATCHES_SCRIPT = `
+  if redis.call("get", KEYS[1]) == ARGV[1] then
+    return redis.call("del", KEYS[1])
+  else
+    return 0
+  end
+`;
+
 /**
  * Acquire a distributed lock for a session
  * @param sessionId - The session ID to lock
  * @param ttl - Time to live in seconds (default: 30)
- * @returns true if lock acquired, false otherwise
+ * @returns The lock token if acquired, null otherwise
  */
-export async function acquireSessionLock(sessionId: string, ttl: number = 30): Promise<boolean> {
+export async function acquireSessionLock(sessionId: string, ttl: number = 30): Promise<string | null> {
   const lockKey = `${SESSION_LOCK_PREFIX}${sessionId}`;
-  const lockValue = `${Date.now()}`;
-  
-  const result = await redis.set(lockKey, lockValue, {
+  const token = crypto.randomUUID();
+
+  const result = await redis.set(lockKey, token, {
     nx: true,
     ex: ttl,
   });
-  
-  return result === 'OK';
+
+  return result === 'OK' ? token : null;
 }
 
 /**
  * Release a distributed lock for a session
  * @param sessionId - The session ID to unlock
+ * @param token - The token returned when the lock was acquired
  */
-export async function releaseSessionLock(sessionId: string): Promise<void> {
+export async function releaseSessionLock(sessionId: string, token: string): Promise<void> {
   const lockKey = `${SESSION_LOCK_PREFIX}${sessionId}`;
-  await redis.del(lockKey);
+  await redis.eval(DELETE_IF_MATCHES_SCRIPT, [lockKey], [token]);
 }
 
 const WINNER_CACHE_TTL_SECONDS = 24 * 60 * 60;
@@ -200,27 +209,28 @@ export async function resetMediaLikeCount(sessionId: string, mediaId: string): P
  * Acquire atomic evaluation lock for session
  * @param sessionId - The session ID
  * @param ttl - Time to live in seconds (default: 10)
- * @returns true if lock acquired, false otherwise
+ * @returns The lock token if acquired, null otherwise
  */
-export async function acquireEvaluationLock(sessionId: string, ttl: number = 10): Promise<boolean> {
+export async function acquireEvaluationLock(sessionId: string, ttl: number = 10): Promise<string | null> {
   const lockKey = `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`;
-  const lockValue = `${Date.now()}`;
-  
-  const result = await redis.set(lockKey, lockValue, {
+  const token = crypto.randomUUID();
+
+  const result = await redis.set(lockKey, token, {
     nx: true,
     ex: ttl,
   });
-  
-  return result === 'OK';
+
+  return result === 'OK' ? token : null;
 }
 
 /**
  * Release atomic evaluation lock for session
  * @param sessionId - The session ID
+ * @param token - The token returned when the lock was acquired
  */
-export async function releaseEvaluationLock(sessionId: string): Promise<void> {
+export async function releaseEvaluationLock(sessionId: string, token: string): Promise<void> {
   const lockKey = `${SESSION_LOCK_PREFIX}evaluation:${sessionId}`;
-  await redis.del(lockKey);
+  await redis.eval(DELETE_IF_MATCHES_SCRIPT, [lockKey], [token]);
 }
 
 /**

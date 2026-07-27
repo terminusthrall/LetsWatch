@@ -44,8 +44,8 @@ async function resolveDeadlineIfExpired(
     return { status: session.status, finalWinningMediaId: session.finalWinningMediaId };
   }
 
-  const lockAcquired = await acquireSessionLock(session.id, 10);
-  if (!lockAcquired) {
+  const lockToken = await acquireSessionLock(session.id, 10);
+  if (!lockToken) {
     return { status: session.status, finalWinningMediaId: session.finalWinningMediaId };
   }
 
@@ -78,7 +78,7 @@ async function resolveDeadlineIfExpired(
 
     return { status: newStatus, finalWinningMediaId: winnerId };
   } finally {
-    await releaseSessionLock(session.id);
+    await releaseSessionLock(session.id, lockToken);
   }
 }
 
