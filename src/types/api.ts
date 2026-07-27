@@ -2,6 +2,7 @@ import { z } from 'zod';
 
 // Shared enums
 export const sessionStatusSchema = z.enum([
+  'LOBBY',
   'SWIPING_ACTIVE',
   'HEAD_TO_HEAD_ACTIVE',
   'DEADLINE_RESOLVED',
@@ -57,6 +58,33 @@ export const submitSwipeBodySchema = z.object({
 
 export type SubmitSwipeBody = z.infer<typeof submitSwipeBodySchema>;
 
+export const addSessionMediaBodySchema = z.object({
+  tmdbId: z.string().min(1),
+  mediaType: z.enum(['movie', 'tv']),
+  title: z.string().min(1),
+  posterPath: z.string().nullable().optional(),
+  releaseYear: z.string().optional(),
+  overview: z.string().optional(),
+});
+
+export type AddSessionMediaBody = z.infer<typeof addSessionMediaBodySchema>;
+
+export const addSessionMediaResponseSchema = z.object({
+  success: z.boolean(),
+  id: z.string().optional(),
+});
+
+export type AddSessionMediaResponse = z.infer<typeof addSessionMediaResponseSchema>;
+
+export const startSessionResponseSchema = z.object({
+  sessionId: z.string(),
+  status: sessionStatusSchema,
+  participantCount: z.number(),
+  mediaCount: z.number(),
+});
+
+export type StartSessionResponse = z.infer<typeof startSessionResponseSchema>;
+
 export const headToHeadVoteBodySchema = z.object({
   preferredMediaId: z.string().uuid(),
   opponentMediaId: z.string().uuid(),
@@ -70,7 +98,7 @@ export const createSessionResponseSchema = z.object({
   userId: z.string(),
   title: z.string(),
   joinCode: z.string(),
-  status: z.literal('SWIPING_ACTIVE'),
+  status: sessionStatusSchema,
   deadlineAt: z.string(),
 });
 

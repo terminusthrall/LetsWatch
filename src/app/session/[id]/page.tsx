@@ -6,6 +6,7 @@ import { useSession } from '@/modules/sessions/useSession';
 import ParticipantRoster from '@/modules/sessions/ParticipantRoster';
 import MatchToast from '@/modules/sessions/MatchToast';
 import JoinModal from '@/modules/sessions/JoinModal';
+import LobbyPanel from '@/modules/sessions/LobbyPanel';
 import SessionPhaseView from '@/modules/sessions/SessionPhaseView';
 import InviteModal from '@/modules/sessions/InviteModal';
 import CountdownTimer from '@/modules/sessions/CountdownTimer';
@@ -25,6 +26,7 @@ export default function SessionRoomPage() {
     isJoining,
     swipe,
     endSession,
+    startSession,
     refetch,
   } = useSession(id);
 
@@ -128,12 +130,24 @@ export default function SessionRoomPage() {
             currentUserId={session.userId}
           />
 
-          <SessionPhaseView
-            session={session}
-            sessionId={id}
-            onVote={handleVote}
-            refetch={refetch}
-          />
+          {session.session.status === 'LOBBY' ? (
+            <LobbyPanel
+              sessionId={id}
+              isHost={session.userId === session.session.hostId}
+              mediaPool={session.mediaPool}
+              participantCount={session.participantCount}
+              joinCode={session.session.joinCode}
+              onStart={startSession}
+              onMediaAdded={refetch}
+            />
+          ) : (
+            <SessionPhaseView
+              session={session}
+              sessionId={id}
+              onVote={handleVote}
+              refetch={refetch}
+            />
+          )}
 
           <InviteModal
             joinCode={session.session.joinCode}
