@@ -22,6 +22,16 @@ const redis = new Proxy({} as Redis, {
   },
 });
 
+export interface SessionState {
+  status: string;
+  participantCount: number;
+  mediaCount: number;
+  deadlineAt: string;
+  matches: string[];
+  winner?: unknown;
+  completedAt?: number;
+}
+
 // Session State Engine Keys
 const SESSION_PREFIX = 'session:';
 const SESSION_LOCK_PREFIX = 'session_lock:';
@@ -63,9 +73,9 @@ export async function releaseSessionLock(sessionId: string): Promise<void> {
  * Get session state from Redis
  * @param sessionId - The session ID
  */
-export async function getSessionState(sessionId: string) {
+export async function getSessionState(sessionId: string): Promise<SessionState | null> {
   const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  return await redis.get(stateKey);
+  return await redis.get<SessionState>(stateKey);
 }
 
 /**
@@ -74,9 +84,9 @@ export async function getSessionState(sessionId: string) {
  * @param state - The session state object
  * @param ttl - Time to live in seconds (default: 3600)
  */
-export async function setSessionState(sessionId: string, state: unknown, ttl: number = 3600): Promise<void> {
+export async function setSessionState(sessionId: string, state: SessionState, ttl: number = 3600): Promise<void> {
   const stateKey = `${SESSION_PREFIX}${sessionId}`;
-  await redis.set(stateKey, JSON.stringify(state), { ex: ttl });
+  await redis.set(stateKey, state, { ex: ttl });
 }
 
 /**

@@ -169,6 +169,7 @@ export async function POST(
       await setSessionState(sessionId, {
         status: newStatus,
         participantCount,
+        mediaCount: mediaItems.length,
         matches,
         deadlineAt: session.deadlineAt.toISOString(),
         winner: winningMedia,

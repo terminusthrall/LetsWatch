@@ -10,6 +10,7 @@ import {
   acquireSessionLock,
   releaseSessionLock,
   setSessionState,
+  type SessionState,
 } from '@/modules/redis';
 import {
   getSessionParticipants,
@@ -70,11 +71,15 @@ async function resolveDeadlineIfExpired(
       .set({ status: newStatus as 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED' | 'DEADLINE_RESOLVED', finalWinningMediaId: winnerId })
       .where(eq(sessions.id, session.id));
 
-    const participantCount = await getParticipantCount(session.id);
+    const [participantCount, mediaCount] = await Promise.all([
+      getParticipantCount(session.id),
+      db.$count(sessionMedia, eq(sessionMedia.sessionId, session.id)),
+    ]);
     const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(session.id, {
       status: newStatus,
       participantCount,
+      mediaCount,
       matches,
       deadlineAt: session.deadlineAt.toISOString(),
     }, ttl);
@@ -116,22 +121,12 @@ async function buildWinnerMedia(
 }
 
 function getWinnerFromState(
-  state: unknown,
+  state: SessionState | null,
   fallbackMediaId: string | null
 ): Promise<WinnerMedia | null> {
-  const typedState =
-    typeof state === 'string'
-      ? (JSON.parse(state) as unknown)
-      : state;
+  const winner = state?.winner ?? null;
 
-  const winner =
-    typedState &&
-    typeof typedState === 'object' &&
-    'winner' in typedState
-      ? (typedState as { winner?: WinnerMedia | null }).winner
-      : null;
-
-  if (winner) return Promise.resolve(winner);
+  if (winner) return Promise.resolve(winner as WinnerMedia);
   if (!fallbackMediaId) return Promise.resolve(null);
   return buildWinnerMedia(fallbackMediaId);
 }
