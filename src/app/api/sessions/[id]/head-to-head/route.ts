@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { headToHeadVotes, sessions, sessionMedia } from '@/db/schema';
-import { eq, and, or } from 'drizzle-orm';
+import { eq, and, or, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
+import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
 import { z } from 'zod';
 import {
   cacheWinner,
@@ -188,36 +189,36 @@ export async function POST(
       ),
     });
 
-    if (existingVote) {
-      await db
-        .delete(headToHeadVotes)
-        .where(eq(headToHeadVotes.id, existingVote.id));
-    }
+    await db.transaction(async (tx) => {
+      if (existingVote) {
+        await tx
+          .delete(headToHeadVotes)
+          .where(eq(headToHeadVotes.id, existingVote.id));
+      }
 
-    await db.insert(headToHeadVotes).values({
-      id: crypto.randomUUID(),
-      sessionId,
-      userId,
-      preferredMediaId,
-      opponentMediaId,
+      await tx.insert(headToHeadVotes).values({
+        id: crypto.randomUUID(),
+        sessionId,
+        userId,
+        preferredMediaId,
+        opponentMediaId,
+      });
     });
 
     const allVotes = await db.query.headToHeadVotes.findMany({
       where: eq(headToHeadVotes.sessionId, sessionId),
     });
 
-    const winCounts: Record<string, number> = {};
-    for (const id of matchIds) {
-      winCounts[id] = 0;
-    }
+    const mediaForStandings = await db.query.sessionMedia.findMany({
+      where: and(
+        eq(sessionMedia.sessionId, sessionId),
+        inArray(sessionMedia.id, matchIds)
+      ),
+      columns: { id: true, addedAt: true },
+    });
+    const addedAtByMediaId = new Map(mediaForStandings.map((m) => [m.id, m.addedAt]));
 
-    for (const vote of allVotes) {
-      winCounts[vote.preferredMediaId] = (winCounts[vote.preferredMediaId] ?? 0) + 1;
-    }
-
-    const standings = Object.entries(winCounts)
-      .map(([mediaId, wins]) => ({ mediaId, wins }))
-      .sort((a, b) => b.wins - a.wins || a.mediaId.localeCompare(b.mediaId));
+    const standings = computeHeadToHeadStandings(matchIds, allVotes, addedAtByMediaId);
 
     const participantCount = await getParticipantCount(sessionId);
     const totalPairs = Math.floor((matchIds.length * (matchIds.length - 1)) / 2);
