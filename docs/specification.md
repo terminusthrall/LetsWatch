@@ -179,12 +179,12 @@ To avoid read/write lock contention on PostgreSQL during swipe bursts, the app u
 
 #### 5.3.1 Key-Value Data Structures & Naming Conventions
 
-- **`session_participants:{sessionId}`** — Redis Set of `userId` strings (SADD, SMEMBERS, SCARD). TTL = `max(24h, remaining-to-deadline + 24h)`.
-- **`session:{sessionId}:media:{mediaId}:likes`** — Redis Set of `userId` strings who liked the media. Count is read via `SCARD` and verified with `SINTER` against the participant set.
-- **`session_matches:{sessionId}`** — Redis Set of matched `sessionMedia.id` strings.
+- **`session_participants:{sessionId}`** — Redis Set of `userId` strings (SADD, SMEMBERS, SCARD). TTL = `max(24h, remaining-to-deadline + 24h)` via `getSessionRedisTtlSeconds`.
+- **`session:{sessionId}:media:{mediaId}:likes`** — Redis Set of `userId` strings who liked the media. Count is read via `SCARD` and verified with `SINTER` against the participant set. TTL set by caller (default 3600s).
+- **`session_matches:{sessionId}`** — Redis Set of matched `sessionMedia.id` strings. TTL set by caller (default 3600s).
 - **`session_winner:{sessionId}`** — Redis String/JSON cached winner payload. TTL 24h.
-- **`session_lock:{sessionId}`** — Distributed lock string (`SET NX EX <ttl>`) for state transitions and host end.
-- **`session_lock:evaluation:{sessionId}`** — Separate lock for swipe match evaluation (`acquireEvaluationLock`).
+- **`session_lock:{sessionId}`** — Distributed lock string (`SET NX EX <ttl>`) for state transitions and host end. TTL set by caller (default 30s).
+- **`session_lock:evaluation:{sessionId}`** — Separate lock for swipe match evaluation (`acquireEvaluationLock`). TTL set by caller (default 10s).
 
 #### 5.3.2 Counter vs. Set Implementation
 
