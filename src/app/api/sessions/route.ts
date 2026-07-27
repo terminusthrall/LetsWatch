@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
 import { addSessionParticipant } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
+import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 import { createSessionBodySchema, type CreateSessionResponse } from '@/types/api';
 
 
@@ -32,6 +33,19 @@ async function generateUniqueJoinCode(): Promise<string> {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const { allowed } = await checkRateLimit(`create-session:${ip}`, {
+      requests: 5,
+      window: '1 m',
+    });
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const parsed = createSessionBodySchema.safeParse(body);
 
