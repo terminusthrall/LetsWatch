@@ -90,8 +90,8 @@ export async function POST(
       );
     }
 
-    const lockAcquired = await acquireSessionLock(sessionId, 10);
-    if (!lockAcquired) {
+    const lockToken = await acquireSessionLock(sessionId, 10);
+    if (!lockToken) {
       return NextResponse.json(
         { error: 'Session is being updated, please try again' },
         { status: 503 }
@@ -173,7 +173,7 @@ export async function POST(
         winningMedia,
       });
     } finally {
-      await releaseSessionLock(sessionId);
+      await releaseSessionLock(sessionId, lockToken);
     }
   } catch (error) {
     console.error('Error ending session:', error);

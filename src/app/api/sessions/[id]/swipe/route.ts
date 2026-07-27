@@ -50,8 +50,8 @@ async function checkAndTransitionSession(sessionId: string) {
   const isComplete = await checkAllParticipantsFinished(sessionId);
   if (!isComplete) return;
 
-  const lockAcquired = await acquireSessionLock(sessionId, 10);
-  if (!lockAcquired) return;
+  const lockToken = await acquireSessionLock(sessionId, 10);
+  if (!lockToken) return;
 
   try {
     const stillComplete = await checkAllParticipantsFinished(sessionId);
@@ -75,7 +75,7 @@ async function checkAndTransitionSession(sessionId: string) {
         .where(eq(sessions.id, sessionId));
     }
   } finally {
-    await releaseSessionLock(sessionId);
+    await releaseSessionLock(sessionId, lockToken);
   }
 }
 
@@ -158,16 +158,16 @@ export async function POST(
       // Check if all participants have liked this media
       if (likeCount >= participantCount) {
         // Acquire evaluation lock to prevent race conditions
-        const lockAcquired = await acquireEvaluationLock(sessionId);
-        
-        if (lockAcquired) {
+        const evaluationToken = await acquireEvaluationLock(sessionId);
+
+        if (evaluationToken) {
           try {
             // Double-check the like count and verify every participant is a member
             const [currentLikeCount, allParticipantsLiked] = await Promise.all([
               getMediaLikeCount(sessionId, mediaId),
               isMediaLikedByAllParticipants(sessionId, mediaId),
             ]);
-            
+
             if (currentLikeCount >= participantCount && allParticipantsLiked) {
               // Update session_media.isMatched in database
               await db.update(sessionMedia)
@@ -182,7 +182,7 @@ export async function POST(
               matchFound = true;
             }
           } finally {
-            await releaseEvaluationLock(sessionId);
+            await releaseEvaluationLock(sessionId, evaluationToken);
           }
         }
       }
