@@ -80,8 +80,8 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),  
   displayName: varchar('display_name', { length: 50 }).notNull(),  
   email: varchar('email', { length: 255 }),
-  isGuest: integer('is_guest').default(1).notNull(), // 1 = Ephemeral Guest, 0 = Registered Account
-  isProSubscriber: integer('is_pro_subscriber').default(0).notNull(), // 1 = Paid Ad-Free / Pro Host
+  isGuest: boolean('is_guest').default(true).notNull(), // true = Ephemeral Guest, false = Registered Account
+  isProSubscriber: boolean('is_pro_subscriber').default(false).notNull(), // true = Paid Ad-Free / Pro Host
   createdAt: timestamp('created_at').defaultNow().notNull(),  
 });  
 
@@ -300,7 +300,7 @@ const submitSwipeSchema = z.object({
 - Verifies the media belongs to the session and that the session is `SWIPING_ACTIVE`.
 - Inserts the swipe with `ON CONFLICT DO NOTHING` on `(sessionId, userId, mediaId)`. A duplicate returns `{ success: true }`.
 - On `LIKE`, adds `userId` to the Redis set `session:{sessionId}:media:{mediaId}:likes`.
-- If the like set covers every participant, marks `session_media.isMatched = 1` and adds the media to `session_matches`.
+- If the like set covers every participant, marks `session_media.isMatched = true` and adds the media to `session_matches`.
 - If the user has voted on every media item, transitions the session: `COMPLETED` for a single match, otherwise `HEAD_TO_HEAD_ACTIVE`.
 
 **Response Payload (200 OK):**
@@ -384,7 +384,7 @@ const submitSwipeSchema = z.object({
 - Calls `resolveSessionOutcome` to compute like counts from the `swipes` table.
 - If one media has unanimous likes: `COMPLETED` with that winner.
 - Otherwise, if one media has the sole top like count: `COMPLETED` with that winner.
-- Otherwise, the top 5 liked media are marked `isMatched = 1` and added to `session_matches`; status becomes `HEAD_TO_HEAD_ACTIVE`.
+- Otherwise, the top 5 liked media are marked `isMatched = true` and added to `session_matches`; status becomes `HEAD_TO_HEAD_ACTIVE`.
 - If there are zero likes, status becomes `DEADLINE_RESOLVED` with no winner.
 - Caches the winner metadata in Redis.
 
@@ -411,7 +411,7 @@ const headToHeadVoteSchema = z.object({
 **Execution Flow:**
 - Rejects if `preferredMediaId === opponentMediaId`.
 - On the first vote, transitions `SWIPING_ACTIVE` → `HEAD_TO_HEAD_ACTIVE`.
-- Resolves the tie-breaker pool from the Redis `session_matches` set, falling back to `session_media.isMatched = 1`.
+- Resolves the tie-breaker pool from the Redis `session_matches` set, falling back to `session_media.isMatched = true`.
 - If fewer than two matched media remain, completes the session immediately with the sole candidate or `null`.
 - Upserts the participant’s vote for the unordered pair.
 - Recomputes pairwise win totals with `computeHeadToHeadStandings`.

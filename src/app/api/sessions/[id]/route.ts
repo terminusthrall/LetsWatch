@@ -93,7 +93,7 @@ async function resolveDeadlineIfExpired(
     if (candidateIds.length > 0) {
       await db
         .update(sessionMedia)
-        .set({ isMatched: 1 })
+        .set({ isMatched: true })
         .where(and(
           eq(sessionMedia.sessionId, session.id),
           inArray(sessionMedia.id, candidateIds)
@@ -276,7 +276,7 @@ export async function GET(
         posterPath: media.posterPath,
         releaseYear: media.releaseYear,
         overview: media.overview,
-        isMatched: media.isMatched === 1,
+        isMatched: media.isMatched,
       })),
       matches,
       participantCount,

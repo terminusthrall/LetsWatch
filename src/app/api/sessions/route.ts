@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
     await db.insert(users).values({
       id: userId,
       displayName,
-      isGuest: 1,
-      isProSubscriber: 0,
+      isGuest: true,
+      isProSubscriber: false,
     });
 
     // Create session with unique join code
