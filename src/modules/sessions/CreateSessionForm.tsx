@@ -2,6 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import type {
+  CreateSessionResponse,
+  MediaSearchResponse,
+  MediaSearchResult,
+} from '@/types/api';
 import { getPosterUrl } from '@/lib/poster';
 import { computeDeadlineAt } from './deadline';
 
@@ -10,26 +15,6 @@ type MediaType = 'movie' | 'tv';
 type GenreOption = {
   id: number;
   name: string;
-};
-
-type SearchResult = {
-  tmdbId: string;
-  mediaType: 'movie' | 'tv';
-  title: string;
-  posterPath: string | null;
-  releaseYear: string;
-  overview: string;
-  genreIds: number[];
-  voteAverage: number;
-};
-
-type CreateSessionResponse = {
-  sessionId: string;
-  userId: string;
-  title: string;
-  status: string;
-  deadlineAt: string;
-  joinCode: string;
 };
 
 const GENRE_OPTIONS: Record<MediaType, GenreOption[]> = {
@@ -93,9 +78,9 @@ export default function CreateSessionForm() {
   const [initialPoolType, setInitialPoolType] = useState<string>('trending_movies');
   const [searchMediaType, setSearchMediaType] = useState<'movie' | 'tv' | 'both'>('movie');
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchResults, setSearchResults] = useState<MediaSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [customMedia, setCustomMedia] = useState<SearchResult[]>([]);
+  const [customMedia, setCustomMedia] = useState<MediaSearchResult[]>([]);
   const [deadlineOption, setDeadlineOption] = useState<string>('24h');
   const [customDeadline, setCustomDeadline] = useState<string>('');
   const [selectedGenres, setSelectedGenres] = useState<number[]>([]);
@@ -117,7 +102,7 @@ export default function CreateSessionForm() {
           `/api/media/search?query=${encodeURIComponent(searchQuery)}&mediaType=${searchMediaType}`,
           { method: 'GET' }
         );
-        const data = (await res.json()) as { results?: SearchResult[] };
+        const data = (await res.json()) as MediaSearchResponse;
         setSearchResults(data.results ?? []);
       } catch {
         setSearchResults([]);
@@ -135,7 +120,7 @@ export default function CreateSessionForm() {
     );
   };
 
-  const addCustomMedia = (item: SearchResult) => {
+  const addCustomMedia = (item: MediaSearchResult) => {
     setCustomMedia((prev) =>
       prev.some((m) => m.tmdbId === item.tmdbId && m.mediaType === item.mediaType)
         ? prev
@@ -143,7 +128,7 @@ export default function CreateSessionForm() {
     );
   };
 
-  const removeCustomMedia = (item: SearchResult) => {
+  const removeCustomMedia = (item: MediaSearchResult) => {
     setCustomMedia((prev) =>
       prev.filter(
         (m) => !(m.tmdbId === item.tmdbId && m.mediaType === item.mediaType)

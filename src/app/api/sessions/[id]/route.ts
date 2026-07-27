@@ -7,6 +7,11 @@ import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import { resolveSessionOutcome } from '@/modules/sessions/resolve';
 import {
+  type SessionDetailResponse,
+  type SessionStatus,
+  type WinnerMedia,
+} from '@/types/api';
+import {
   getSessionMatches,
   addSessionMatch,
   acquireSessionLock,
@@ -18,18 +23,6 @@ import {
   getSessionParticipants,
   getParticipantCount,
 } from '@/modules/sessions/participants';
-
-type WinnerMedia = {
-  id: string;
-  tmdbId: string;
-  mediaType: string;
-  title: string;
-  posterPath: string | null;
-  releaseYear: string | null;
-  overview: string | null;
-  voteAverage: number | null;
-  watchUrl: string;
-};
 
 function watchUrlForTitle(title: string): string {
   return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
@@ -264,13 +257,13 @@ export async function GET(
         ? await getWinnerFromState(sessionId, session.finalWinningMediaId)
         : null;
 
-    return NextResponse.json({
+    return NextResponse.json<SessionDetailResponse>({
       session: {
         id: session.id,
         title: session.title,
         joinCode: session.joinCode,
         hostId: session.hostId,
-        status: session.status,
+        status: session.status as SessionStatus,
         deadlineAt: session.deadlineAt.toISOString(),
         finalWinningMediaId: session.finalWinningMediaId,
       },

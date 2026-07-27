@@ -4,7 +4,11 @@ import { headToHeadVotes, sessions, sessionMedia } from '@/db/schema';
 import { eq, and, or, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { computeHeadToHeadStandings } from '@/modules/head-to-head/standings';
-import { z } from 'zod';
+import {
+  headToHeadVoteBodySchema,
+  type HeadToHeadResponse,
+  type WinnerMedia,
+} from '@/types/api';
 import {
   cacheWinner,
   getSessionMatches,
@@ -14,23 +18,6 @@ import {
   getParticipantCount,
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
-
-const headToHeadVoteSchema = z.object({
-  preferredMediaId: z.string().uuid(),
-  opponentMediaId: z.string().uuid(),
-});
-
-type WinnerMedia = {
-  id: string;
-  tmdbId: string;
-  mediaType: string;
-  title: string;
-  posterPath: string | null;
-  releaseYear: string | null;
-  overview: string | null;
-  voteAverage: number | null;
-  watchUrl: string;
-};
 
 function watchUrlForTitle(title: string): string {
   return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
@@ -81,7 +68,7 @@ export async function POST(
     const { userId } = auth;
 
     const body = await request.json();
-    const parsed = headToHeadVoteSchema.safeParse(body);
+    const parsed = headToHeadVoteBodySchema.safeParse(body);
 
     if (!parsed.success) {
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
@@ -146,7 +133,7 @@ export async function POST(
         await cacheWinner(sessionId, winner);
       }
 
-      return NextResponse.json({
+      return NextResponse.json<HeadToHeadResponse>({
         success: true,
         completed: true,
         winner,
@@ -240,7 +227,7 @@ export async function POST(
         await cacheWinner(sessionId, winner);
       }
 
-      return NextResponse.json({
+      return NextResponse.json<HeadToHeadResponse>({
         success: true,
         completed: true,
         winner,
@@ -248,7 +235,7 @@ export async function POST(
       });
     }
 
-    return NextResponse.json({
+    return NextResponse.json<HeadToHeadResponse>({
       success: true,
       completed: false,
       standings,

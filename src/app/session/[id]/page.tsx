@@ -11,89 +11,12 @@ import {
   type SwipeMedia,
   type SwipeDirection,
 } from '@/modules/swiping/SwipeDeck';
-
-type SessionStatus =
-  | 'SWIPING_ACTIVE'
-  | 'HEAD_TO_HEAD_ACTIVE'
-  | 'DEADLINE_RESOLVED'
-  | 'COMPLETED';
-
-type Participant = {
-  userId: string;
-  displayName: string;
-  isHost: boolean;
-  swipedCount: number;
-  totalMediaCount: number;
-  isFinished: boolean;
-};
-
-type SessionResponse = {
-  session: {
-    id: string;
-    title: string;
-    joinCode: string | null;
-    hostId: string;
-    status: SessionStatus;
-    deadlineAt: string;
-    finalWinningMediaId: string | null;
-  };
-  participants: Participant[];
-  mediaPool: Array<{
-    id: string;
-    tmdbId: string;
-    mediaType: string;
-    title: string;
-    posterPath: string | null;
-    releaseYear: string | null;
-    overview: string | null;
-    isMatched: boolean;
-  }>;
-  matches: string[];
-  participantCount: number;
-  redisState: unknown;
-  userId: string;
-  headToHeadVotes: Array<{
-    userId: string;
-    preferredMediaId: string;
-    opponentMediaId: string;
-  }>;
-  headToHeadStandings: Array<{ mediaId: string; wins: number }>;
-  winningMedia: {
-    id: string;
-    tmdbId: string;
-    mediaType: string;
-    title: string;
-    posterPath: string | null;
-    releaseYear: string | null;
-    overview: string | null;
-    voteAverage: number | null;
-    watchUrl: string;
-  } | null;
-};
-
-type JoinSessionResponse = {
-  sessionId: string;
-  userId: string;
-  title: string;
-  status: string;
-  deadlineAt: string;
-  participantCount: number;
-};
-
-type SwipeResponse = {
-  success: boolean;
-  matchFound: boolean;
-  matchedMedia?: {
-    id: string;
-    title: string;
-    posterPath: string | null;
-  };
-};
-
-type EndSessionResponse = {
-  status: SessionStatus;
-  winningMedia: SessionResponse['winningMedia'];
-};
+import {
+  type SessionDetailResponse,
+  type JoinSessionResponse,
+  type SwipeResponse,
+  type Participant,
+} from '@/types/api';
 
 function ParticipantRoster({
   participants,
@@ -184,7 +107,7 @@ export default function SessionRoomPage() {
   const params = useParams();
   const id = typeof params.id === 'string' ? params.id : '';
 
-  const [session, setSession] = useState<SessionResponse | null>(null);
+  const [session, setSession] = useState<SessionDetailResponse | null>(null);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [needsJoin, setNeedsJoin] = useState(false);
@@ -221,7 +144,7 @@ export default function SessionRoomPage() {
           throw new Error(data.error || 'Failed to load session');
         }
 
-        const data = (await res.json()) as SessionResponse;
+        const data = (await res.json()) as SessionDetailResponse;
         setSession(data);
         setNeedsJoin(false);
         setError(null);
@@ -347,9 +270,7 @@ export default function SessionRoomPage() {
 
         if (data.matchFound) {
           const title =
-            session.mediaPool.find((m) => m.id === mediaId)?.title ??
-            data.matchedMedia?.title ??
-            'this title';
+            session.mediaPool.find((m) => m.id === mediaId)?.title ?? 'this title';
           setToast({ mediaId, title });
         }
       } catch (err) {

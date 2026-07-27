@@ -1,6 +1,4 @@
 import { pgTable, uuid, varchar, timestamp, integer, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
-import { createInsertSchema, createSelectSchema } from 'drizzle-zod';
-import { z } from 'zod';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
 export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'DEADLINE_RESOLVED', 'COMPLETED']);  
@@ -91,13 +89,3 @@ export const headToHeadVotes = pgTable('head_to_head_votes', {
 }, (table) => [
   index('idx_h2h_session_user').on(table.sessionId, table.userId),
 ]);
-
-// 5. Zod Validation Contracts for API Boundaries
-export const insertUserSchema = createInsertSchema(users);
-export const selectUserSchema = createSelectSchema(users);
-
-export const insertSessionSchema = createInsertSchema(sessions);
-export const selectSessionSchema = createSelectSchema(sessions);
-
-export const insertSwipeSchema = createInsertSchema(swipes);
-export const selectSwipeSchema = createSelectSchema(swipes);

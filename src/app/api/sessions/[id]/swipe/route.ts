@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { swipes, sessionMedia, sessions } from '@/db/schema';
 import { eq, and, count } from 'drizzle-orm';
-import { z } from 'zod';
+import { submitSwipeBodySchema, type SwipeResponse } from '@/types/api';
 import { 
   addMediaLike, 
   getMediaLikeCount, 
@@ -21,10 +21,6 @@ import {
   getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
 
-const submitSwipeSchema = z.object({
-  mediaId: z.string().uuid(),
-  vote: z.enum(['LIKE', 'PASS']),
-});
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
   const [mediaCount, swipeCounts, participants] = await Promise.all([
@@ -94,7 +90,7 @@ export async function POST(
     const { userId } = auth;
 
     const body = await request.json();
-    const parsed = submitSwipeSchema.safeParse(body);
+    const parsed = submitSwipeBodySchema.safeParse(body);
 
     if (!parsed.success) {
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
@@ -144,7 +140,7 @@ export async function POST(
       .returning({ id: swipes.id });
 
     if (insertedSwipe.length === 0) {
-      return NextResponse.json({ success: true });
+      return NextResponse.json<SwipeResponse>({ success: true });
     }
 
     let matchFound = false;
@@ -199,7 +195,7 @@ export async function POST(
       await checkAndTransitionSession(sessionId);
     }
 
-    return NextResponse.json({
+    return NextResponse.json<SwipeResponse>({
       success: true,
       matchFound,
     });

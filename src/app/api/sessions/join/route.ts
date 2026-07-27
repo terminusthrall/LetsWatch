@@ -7,17 +7,17 @@ import {
   getParticipantCount,
 } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
-import { z } from 'zod';
+import {
+  joinByCodeBodySchema,
+  type JoinSessionResponse,
+  type SessionStatus,
+} from '@/types/api';
 
-const joinBodySchema = z.object({
-  code: z.string().min(6).max(6),
-  displayName: z.string().min(1).max(50),
-});
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const parsed = joinBodySchema.safeParse(body);
+    const parsed = joinByCodeBodySchema.safeParse(body);
 
     if (!parsed.success) {
       return NextResponse.json(
@@ -59,11 +59,11 @@ export async function POST(request: NextRequest) {
     const participantCount = await getParticipantCount(sessionId);
 
     const token = await mintSessionToken({ userId, sessionId });
-    const response = NextResponse.json({
+    const response = NextResponse.json<JoinSessionResponse>({
       sessionId,
       userId,
       title: session.title,
-      status: session.status,
+      status: session.status as SessionStatus,
       deadlineAt: session.deadlineAt.toISOString(),
       participantCount,
     });

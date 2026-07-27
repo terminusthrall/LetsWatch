@@ -11,18 +11,7 @@ import {
 } from '@/modules/redis';
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import { resolveSessionOutcome } from '@/modules/sessions/resolve';
-
-type WinnerMedia = {
-  id: string;
-  tmdbId: string;
-  mediaType: string;
-  title: string;
-  posterPath: string | null;
-  releaseYear: string | null;
-  overview: string | null;
-  voteAverage: number | null;
-  watchUrl: string;
-};
+import { type EndSessionResponse, type WinnerMedia } from '@/types/api';
 
 function watchUrlForTitle(title: string): string {
   return `https://www.justwatch.com/us/search?q=${encodeURIComponent(title)}`;
@@ -139,7 +128,7 @@ export async function POST(
         await cacheWinner(sessionId, winningMedia);
       }
 
-      return NextResponse.json({
+      return NextResponse.json<EndSessionResponse>({
         status: newStatus,
         winningMedia,
       });
