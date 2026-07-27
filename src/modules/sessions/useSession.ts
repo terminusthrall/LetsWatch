@@ -129,46 +129,43 @@ export function useSession(sessionId: string) {
     [sessionId, fetchSession]
   );
 
-  const swipe = useCallback(
-    async (
-      mediaId: string,
-      direction: SwipeDirection
-    ): Promise<SwipeResult> => {
-      if (!sessionId || !session?.userId) {
+  const swipe = async (
+    mediaId: string,
+    direction: SwipeDirection
+  ): Promise<SwipeResult> => {
+    if (!sessionId || !session?.userId) {
+      return { matchFound: false, title: null };
+    }
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}/swipe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          mediaId,
+          vote: direction,
+        }),
+      });
+
+      const data = (await res.json()) as SwipeResponse;
+
+      if (!res.ok) {
+        console.error('Swipe failed', data);
         return { matchFound: false, title: null };
       }
 
-      try {
-        const res = await fetch(`/api/sessions/${sessionId}/swipe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'same-origin',
-          body: JSON.stringify({
-            mediaId,
-            vote: direction,
-          }),
-        });
+      const title = data.matchFound
+        ? (session.mediaPool.find((m) => m.id === mediaId)?.title ??
+            'this title')
+        : null;
 
-        const data = (await res.json()) as SwipeResponse;
-
-        if (!res.ok) {
-          console.error('Swipe failed', data);
-          return { matchFound: false, title: null };
-        }
-
-        const title = data.matchFound
-          ? (session.mediaPool.find((m) => m.id === mediaId)?.title ??
-              'this title')
-          : null;
-
-        return { matchFound: data.matchFound ?? false, title };
-      } catch (err) {
-        console.error(err);
-        return { matchFound: false, title: null };
-      }
-    },
-    [sessionId, session?.userId, session?.mediaPool]
-  );
+      return { matchFound: data.matchFound ?? false, title };
+    } catch (err) {
+      console.error(err);
+      return { matchFound: false, title: null };
+    }
+  };
 
   const endSession = useCallback(async () => {
     if (!sessionId || !session) return;
