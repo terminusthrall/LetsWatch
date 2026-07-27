@@ -281,6 +281,7 @@ export async function GET(
       matches,
       participantCount,
       userId,
+      mySwipedMediaIds: Array.from(swipedByUser.get(userId) ?? []),
       headToHeadVotes: h2hVotes.map((vote) => ({
         userId: vote.userId,
         preferredMediaId: vote.preferredMediaId,

@@ -161,6 +161,7 @@ export const sessionDetailResponseSchema = z.object({
   }),
   participants: z.array(participantSchema),
   mediaPool: z.array(sessionMediaSchema),
+  mySwipedMediaIds: z.array(z.string()),
   matches: z.array(z.string()),
   participantCount: z.number(),
   userId: z.string(),
