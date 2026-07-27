@@ -7,6 +7,7 @@ import {
   getParticipantCount,
 } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
+import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 import {
   joinByCodeBodySchema,
   type JoinSessionResponse,
@@ -14,8 +15,23 @@ import {
 } from '@/types/api';
 
 
+const MAX_PARTICIPANTS = 20;
+
 export async function POST(request: NextRequest) {
   try {
+    const ip = getClientIp(request);
+    const { allowed } = await checkRateLimit(`join-session:${ip}`, {
+      requests: 10,
+      window: '1 m',
+    });
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const parsed = joinByCodeBodySchema.safeParse(body);
 
@@ -44,6 +60,14 @@ export async function POST(request: NextRequest) {
     }
 
     const sessionId = session.id;
+    const participantCount = await getParticipantCount(sessionId);
+
+    if (participantCount >= MAX_PARTICIPANTS) {
+      return NextResponse.json(
+        { error: 'Session is full' },
+        { status: 400 }
+      );
+    }
 
     // Create ephemeral guest user
     const userId = crypto.randomUUID();
@@ -56,7 +80,7 @@ export async function POST(request: NextRequest) {
 
     await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
-    const participantCount = await getParticipantCount(sessionId);
+    const updatedParticipantCount = await getParticipantCount(sessionId);
 
     const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json<JoinSessionResponse>({
@@ -65,7 +89,7 @@ export async function POST(request: NextRequest) {
       title: session.title,
       status: session.status as SessionStatus,
       deadlineAt: session.deadlineAt.toISOString(),
-      participantCount,
+      participantCount: updatedParticipantCount,
     });
 
     response.cookies.set('user_session', token, {

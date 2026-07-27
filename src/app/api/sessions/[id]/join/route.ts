@@ -13,7 +13,10 @@ import {
   type SessionStatus,
 } from '@/types/api';
 import { mintSessionToken } from '@/modules/auth';
+import { checkRateLimit, getClientIp } from '@/modules/rate-limit';
 
+
+const MAX_PARTICIPANTS = 20;
 
 export async function POST(
   request: NextRequest,
@@ -21,6 +24,20 @@ export async function POST(
 ) {
   try {
     const sessionId = (await params).id;
+
+    const ip = getClientIp(request);
+    const { allowed } = await checkRateLimit(`join-session:${ip}`, {
+      requests: 10,
+      window: '1 m',
+    });
+
+    if (!allowed) {
+      return NextResponse.json(
+        { error: 'Too many requests' },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const parsed = joinByIdBodySchema.safeParse(body);
 
@@ -42,6 +59,15 @@ export async function POST(
 
     if (session.status !== 'SWIPING_ACTIVE') {
       return NextResponse.json({ error: 'Session is not accepting new participants' }, { status: 400 });
+    }
+
+    const initialParticipantCount = await getParticipantCount(sessionId);
+
+    if (initialParticipantCount >= MAX_PARTICIPANTS) {
+      return NextResponse.json(
+        { error: 'Session is full' },
+        { status: 400 }
+      );
     }
 
     // Create ephemeral user
