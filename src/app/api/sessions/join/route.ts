@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { users, sessions, sessionMedia } from '@/db/schema';
+import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { setSessionState } from '@/modules/redis';
 import {
   addSessionParticipant,
   getParticipantCount,
-  getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
 import { z } from 'zod';
@@ -58,18 +56,7 @@ export async function POST(request: NextRequest) {
 
     await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
-    const [participantCount, mediaCount] = await Promise.all([
-      getParticipantCount(sessionId),
-      db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
-    ]);
-    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
-    await setSessionState(sessionId, {
-      status: session.status,
-      participantCount,
-      mediaCount,
-      deadlineAt: session.deadlineAt.toISOString(),
-      matches: [],
-    }, ttl);
+    const participantCount = await getParticipantCount(sessionId);
 
     const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json({

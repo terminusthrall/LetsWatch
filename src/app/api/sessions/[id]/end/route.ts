@@ -6,8 +6,7 @@ import { getMediaDetails } from '@/modules/tmdb';
 import {
   getParticipantCount,
   addSessionMatch,
-  getSessionMatches,
-  setSessionState,
+  cacheWinner,
   acquireSessionLock,
   releaseSessionLock,
 } from '@/modules/redis';
@@ -164,16 +163,10 @@ export async function POST(
       const winningMedia = winningMediaId
         ? await buildWinnerMedia(winningMediaId)
         : null;
-      const matches = await getSessionMatches(sessionId);
 
-      await setSessionState(sessionId, {
-        status: newStatus,
-        participantCount,
-        mediaCount: mediaItems.length,
-        matches,
-        deadlineAt: session.deadlineAt.toISOString(),
-        winner: winningMedia,
-      });
+      if (winningMedia) {
+        await cacheWinner(sessionId, winningMedia);
+      }
 
       return NextResponse.json({
         status: newStatus,

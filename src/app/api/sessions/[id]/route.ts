@@ -5,17 +5,15 @@ import { eq, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
 import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
-  getSessionState,
   getSessionMatches,
   acquireSessionLock,
   releaseSessionLock,
-  setSessionState,
-  type SessionState,
+  cacheWinner,
+  getCachedWinner,
 } from '@/modules/redis';
 import {
   getSessionParticipants,
   getParticipantCount,
-  getSessionRedisTtlSeconds,
 } from '@/modules/sessions/participants';
 
 type WinnerMedia = {
@@ -71,18 +69,12 @@ async function resolveDeadlineIfExpired(
       .set({ status: newStatus as 'SWIPING_ACTIVE' | 'HEAD_TO_HEAD_ACTIVE' | 'COMPLETED' | 'DEADLINE_RESOLVED', finalWinningMediaId: winnerId })
       .where(eq(sessions.id, session.id));
 
-    const [participantCount, mediaCount] = await Promise.all([
-      getParticipantCount(session.id),
-      db.$count(sessionMedia, eq(sessionMedia.sessionId, session.id)),
-    ]);
-    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
-    await setSessionState(session.id, {
-      status: newStatus,
-      participantCount,
-      mediaCount,
-      matches,
-      deadlineAt: session.deadlineAt.toISOString(),
-    }, ttl);
+    if (winnerId) {
+      const winner = await buildWinnerMedia(winnerId);
+      if (winner) {
+        await cacheWinner(session.id, winner);
+      }
+    }
 
     return { status: newStatus, finalWinningMediaId: winnerId };
   } finally {
@@ -120,14 +112,14 @@ async function buildWinnerMedia(
   };
 }
 
-function getWinnerFromState(
-  state: SessionState | null,
+async function getWinnerFromState(
+  sessionId: string,
   fallbackMediaId: string | null
 ): Promise<WinnerMedia | null> {
-  const winner = state?.winner ?? null;
+  const cached = await getCachedWinner(sessionId);
 
-  if (winner) return Promise.resolve(winner as WinnerMedia);
-  if (!fallbackMediaId) return Promise.resolve(null);
+  if (cached) return cached as WinnerMedia;
+  if (!fallbackMediaId) return null;
   return buildWinnerMedia(fallbackMediaId);
 }
 
@@ -219,14 +211,12 @@ export async function GET(
       .map(([mediaId, wins]) => ({ mediaId, wins }))
       .sort((a, b) => b.wins - a.wins || a.mediaId.localeCompare(b.mediaId));
 
-    // Get Redis state
-    const redisState = await getSessionState(sessionId);
     const matches = await getSessionMatches(sessionId);
     const participantCount = await getParticipantCount(sessionId);
 
     const winningMedia =
       session.status === 'COMPLETED' || session.status === 'DEADLINE_RESOLVED'
-        ? await getWinnerFromState(redisState, session.finalWinningMediaId)
+        ? await getWinnerFromState(sessionId, session.finalWinningMediaId)
         : null;
 
     return NextResponse.json({
@@ -252,7 +242,6 @@ export async function GET(
       })),
       matches,
       participantCount,
-      redisState,
       userId,
       headToHeadVotes: h2hVotes.map((vote) => ({
         userId: vote.userId,
