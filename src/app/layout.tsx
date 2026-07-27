@@ -27,7 +27,18 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <footer className="flex items-center justify-center gap-2 py-4 text-center text-xs text-zinc-500 dark:text-zinc-400">
+          <img
+            src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short.svg"
+            alt="TMDB"
+            className="h-4 w-auto"
+          />
+          This product uses the TMDB API but is not endorsed or certified by
+          TMDB.
+        </footer>
+      </body>
     </html>
   );
 }
