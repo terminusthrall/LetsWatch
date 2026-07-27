@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getPosterUrl } from '@/lib/poster';
+import { pairKey, generatePairs } from './pairs';
 
 type PairwiseItem = {
   id: string;
@@ -32,10 +33,6 @@ type PairwiseVoteProps = {
   participantCount: number;
   onVoteSubmitted: () => void;
 };
-
-function pairKey(a: string, b: string): string {
-  return a < b ? `${a}:${b}` : `${b}:${a}`;
-}
 
 function PosterCard({
   item,
@@ -116,15 +113,7 @@ export default function PairwiseVote({
     });
   }, [myVotes]);
 
-  const allPairs = useMemo(() => {
-    const pairs: Array<[PairwiseItem, PairwiseItem]> = [];
-    for (let i = 0; i < items.length; i++) {
-      for (let j = i + 1; j < items.length; j++) {
-        pairs.push([items[i], items[j]]);
-      }
-    }
-    return pairs;
-  }, [items]);
+  const allPairs = useMemo(() => generatePairs(items), [items]);
 
   const currentPair = useMemo(() => {
     return (
