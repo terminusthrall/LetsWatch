@@ -3,7 +3,8 @@ import { db } from '@/db';
 import { users, sessions, sessionMedia } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
-import { addSessionParticipant, setSessionState } from '@/modules/redis';
+import { setSessionState } from '@/modules/redis';
+import { addSessionParticipant, getSessionRedisTtlSeconds } from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
 import { z } from 'zod';
 
@@ -198,13 +199,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Set up Redis state
-    await addSessionParticipant(sessionId, userId);
+    await addSessionParticipant(sessionId, userId, deadlineAt);
+    const ttl = getSessionRedisTtlSeconds(deadlineAt);
     await setSessionState(sessionId, {
       status: 'SWIPING_ACTIVE',
       participantCount: 1,
       mediaCount: records.length,
       deadlineAt: deadlineAt.toISOString(),
-    });
+    }, ttl);
 
     // Set cookie with signed session token
     const token = await mintSessionToken({ userId, sessionId });

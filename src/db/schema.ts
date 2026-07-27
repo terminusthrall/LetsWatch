@@ -40,6 +40,17 @@ export const sessions = pgTable('sessions', {
   uniqueIndex('idx_sessions_join_code').on(table.joinCode),
 ]);  
 
+// 2.5. Session Participants (source of truth)
+export const sessionParticipants = pgTable('session_participants', {  
+  id: uuid('id').primaryKey().defaultRandom(),  
+  sessionId: uuid('session_id').references(() => sessions.id, { onDelete: 'cascade' }).notNull(),  
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),  
+  joinedAt: timestamp('joined_at').defaultNow().notNull(),  
+}, (table) => [  
+  index('idx_session_participants_session_id').on(table.sessionId),  
+  uniqueIndex('uniq_session_participant').on(table.sessionId, table.userId),  
+]);  
+
 // 3. Session Media Pool
 export const sessionMedia = pgTable('session_media', {  
   id: uuid('id').primaryKey().defaultRandom(),  

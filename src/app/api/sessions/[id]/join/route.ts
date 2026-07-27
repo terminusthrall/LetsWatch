@@ -3,7 +3,12 @@ import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
-import { addSessionParticipant, getParticipantCount, setSessionState } from '@/modules/redis';
+import { setSessionState } from '@/modules/redis';
+import {
+  addSessionParticipant,
+  getParticipantCount,
+  getSessionRedisTtlSeconds,
+} from '@/modules/sessions/participants';
 import { mintSessionToken } from '@/modules/auth';
 
 const joinBodySchema = z.object({
@@ -49,14 +54,15 @@ export async function POST(
     });
 
     // Add to Redis participants set
-    await addSessionParticipant(sessionId, userId);
+    await addSessionParticipant(sessionId, userId, session.deadlineAt);
 
     // Update participant count in session state
     const participantCount = await getParticipantCount(sessionId);
+    const ttl = getSessionRedisTtlSeconds(session.deadlineAt);
     await setSessionState(sessionId, {
       status: session.status,
       participantCount,
-    });
+    }, ttl);
 
     // Set cookie with signed session token
     const token = await mintSessionToken({ userId, sessionId });
