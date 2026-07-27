@@ -4,6 +4,7 @@ import { users, sessions, sessionMedia } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { discoverMovies, discoverTV, mapMovieToSessionMedia, mapTVToSessionMedia, TMDBMovie, TMDBTV } from '@/modules/tmdb';
 import { addSessionParticipant, setSessionState } from '@/modules/redis';
+import { mintSessionToken } from '@/modules/auth';
 import { z } from 'zod';
 
 const createSessionBodySchema = z.object({
@@ -205,7 +206,8 @@ export async function POST(request: NextRequest) {
       deadlineAt: deadlineAt.toISOString(),
     });
 
-    // Set cookie with user and session info
+    // Set cookie with signed session token
+    const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json({
       sessionId,
       userId,
@@ -215,7 +217,7 @@ export async function POST(request: NextRequest) {
       deadlineAt: deadlineAt.toISOString(),
     });
 
-    response.cookies.set('user_session', JSON.stringify({ userId, sessionId }), {
+    response.cookies.set('user_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',

@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { sessions, sessionMedia, headToHeadVotes, users, swipes } from '@/db/schema';
 import { eq, inArray } from 'drizzle-orm';
 import { getMediaDetails } from '@/modules/tmdb';
+import { getAuthenticatedParticipant } from '@/modules/auth';
 import {
   getSessionState,
   getSessionMatches,
@@ -139,35 +140,12 @@ export async function GET(
     const sessionId = (await params).id;
 
     // Verify participant authentication
-    const cookie = request.cookies.get('user_session')?.value;
-    if (!cookie) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    const auth = await getAuthenticatedParticipant(request, sessionId);
+    if (auth instanceof NextResponse) {
+      return auth;
     }
-
-    let userId: string;
-    let cookieSessionId: string;
-    try {
-      const parsed = JSON.parse(cookie) as { userId?: unknown; sessionId?: unknown };
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error('Invalid cookie');
-      }
-      if (typeof parsed.userId !== 'string' || typeof parsed.sessionId !== 'string') {
-        throw new Error('Invalid cookie');
-      }
-      userId = parsed.userId;
-      cookieSessionId = parsed.sessionId;
-    } catch {
-      return NextResponse.json({ error: 'Invalid session cookie' }, { status: 401 });
-    }
-
-    if (cookieSessionId !== sessionId) {
-      return NextResponse.json({ error: 'Session mismatch' }, { status: 401 });
-    }
-
+    const { userId } = auth;
     const participantIds = await getSessionParticipants(sessionId);
-    if (!participantIds.includes(userId)) {
-      return NextResponse.json({ error: 'Not a participant' }, { status: 401 });
-    }
 
     // Get session from database
     const session = await db.query.sessions.findFirst({

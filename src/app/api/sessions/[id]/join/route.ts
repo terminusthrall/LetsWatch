@@ -3,6 +3,7 @@ import { db } from '@/db';
 import { users, sessions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { addSessionParticipant, getParticipantCount, setSessionState } from '@/modules/redis';
+import { mintSessionToken } from '@/modules/auth';
 
 export async function POST(
   request: NextRequest,
@@ -50,7 +51,8 @@ export async function POST(
       participantCount,
     });
 
-    // Set cookie with user and session info
+    // Set cookie with signed session token
+    const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json({
       sessionId,
       userId,
@@ -60,7 +62,7 @@ export async function POST(
       participantCount,
     });
 
-    response.cookies.set('user_session', JSON.stringify({ userId, sessionId }), {
+    response.cookies.set('user_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',

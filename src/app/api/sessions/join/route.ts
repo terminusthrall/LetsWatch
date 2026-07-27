@@ -7,6 +7,7 @@ import {
   getParticipantCount,
   setSessionState,
 } from '@/modules/redis';
+import { mintSessionToken } from '@/modules/auth';
 import { z } from 'zod';
 
 const joinBodySchema = z.object({
@@ -63,6 +64,7 @@ export async function POST(request: NextRequest) {
       deadlineAt: session.deadlineAt.toISOString(),
     });
 
+    const token = await mintSessionToken({ userId, sessionId });
     const response = NextResponse.json({
       sessionId,
       userId,
@@ -72,7 +74,7 @@ export async function POST(request: NextRequest) {
       participantCount,
     });
 
-    response.cookies.set('user_session', JSON.stringify({ userId, sessionId }), {
+    response.cookies.set('user_session', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',
