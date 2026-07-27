@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, timestamp, integer, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, timestamp, boolean, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
 
 export const voteEnum = pgEnum('vote_direction', ['LIKE', 'PASS']);  
 export const sessionStatusEnum = pgEnum('session_status', ['SWIPING_ACTIVE', 'HEAD_TO_HEAD_ACTIVE', 'DEADLINE_RESOLVED', 'COMPLETED']);  
@@ -8,8 +8,8 @@ export const users = pgTable('users', {
   id: uuid('id').primaryKey().defaultRandom(),  
   displayName: varchar('display_name', { length: 50 }).notNull(),  
   email: varchar('email', { length: 255 }),
-  isGuest: integer('is_guest').default(1).notNull(), // 1 = Ephemeral Guest, 0 = Registered Account
-  isProSubscriber: integer('is_pro_subscriber').default(0).notNull(), // 1 = Paid Ad-Free / Pro Host
+  isGuest: boolean('is_guest').default(true).notNull(), // true = Ephemeral Guest, false = Registered Account
+  isProSubscriber: boolean('is_pro_subscriber').default(false).notNull(), // true = Paid Ad-Free / Pro Host
   createdAt: timestamp('created_at').defaultNow().notNull(),  
 });  
 
@@ -59,7 +59,7 @@ export const sessionMedia = pgTable('session_media', {
   posterPath: varchar('poster_path', { length: 255 }),  
   releaseYear: varchar('release_year', { length: 10 }),  
   overview: varchar('overview', { length: 1000 }),  
-  isMatched: integer('is_matched').default(0).notNull(), // 1 when unanimous match occurs  
+  isMatched: boolean('is_matched').default(false).notNull(), // true when a unanimous match occurs  
   addedAt: timestamp('added_at').defaultNow().notNull(),  
 }, (table) => [
   index('idx_session_media_session_id').on(table.sessionId),

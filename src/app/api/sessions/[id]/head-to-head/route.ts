@@ -108,7 +108,7 @@ export async function POST(
       const matched = await db.query.sessionMedia.findMany({
         where: and(
           eq(sessionMedia.sessionId, sessionId),
-          eq(sessionMedia.isMatched, 1)
+          eq(sessionMedia.isMatched, true)
         ),
         orderBy: (sessionMedia, { asc }) => [asc(sessionMedia.addedAt)],
       });

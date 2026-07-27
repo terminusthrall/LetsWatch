@@ -75,8 +75,8 @@ export async function POST(
     await db.insert(users).values({
       id: userId,
       displayName,
-      isGuest: 1,
-      isProSubscriber: 0,
+      isGuest: true,
+      isProSubscriber: false,
     });
 
     // Add to Redis participants set
