@@ -71,11 +71,13 @@ export async function POST(
     const parsed = headToHeadVoteBodySchema.safeParse(body);
 
     if (!parsed.success) {
+      console.error('Invalid head-to-head vote body:', parsed.error);
       const message = parsed.error.issues.map((issue) => issue.message).join(', ');
       return NextResponse.json({ error: message }, { status: 400 });
     }
 
-    const { preferredMediaId, opponentMediaId } = parsed.data;
+    const preferredMediaId = parsed.data.preferredMediaId.trim();
+    const opponentMediaId = parsed.data.opponentMediaId.trim();
 
     if (preferredMediaId === opponentMediaId) {
       return NextResponse.json(
@@ -115,6 +117,8 @@ export async function POST(
       matchIds = matched.map((m) => m.id);
     }
 
+    const matchIdSet = new Set(matchIds.map((id) => id.trim()));
+
     if (matchIds.length < 2) {
       const winningMediaId = matchIds[0] ?? null;
       await db
@@ -143,7 +147,7 @@ export async function POST(
       });
     }
 
-    if (!matchIds.includes(preferredMediaId) || !matchIds.includes(opponentMediaId)) {
+    if (!matchIdSet.has(preferredMediaId) || !matchIdSet.has(opponentMediaId)) {
       return NextResponse.json(
         { error: 'Selected media is not part of the tie-breaker pool' },
         { status: 400 }

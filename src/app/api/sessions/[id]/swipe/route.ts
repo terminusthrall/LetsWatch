@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { swipes, sessionMedia, sessions } from '@/db/schema';
-import { eq, and, count } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { submitSwipeBodySchema, type SwipeResponse } from '@/types/api';
 import { 
   addMediaLike, 
   getMediaLikeCount,
   getSnapshotParticipantCount,
+  getSnapshotMediaCount,
   isMediaLikedByAllSnapshotParticipants,
   addSessionMatch,
   acquireEvaluationLock,
@@ -23,23 +24,18 @@ import {
 
 
 async function checkAllParticipantsFinished(sessionId: string): Promise<boolean> {
-  const [mediaCount, swipeCounts, participants] = await Promise.all([
-    db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)),
-    db
-      .select({ userId: swipes.userId, total: count() })
-      .from(swipes)
-      .where(eq(swipes.sessionId, sessionId))
-      .groupBy(swipes.userId),
-    getSessionParticipants(sessionId),
+  const [snapshotParticipantCount, snapshotMediaCount, totalSwipes] = await Promise.all([
+    getSnapshotParticipantCount(sessionId),
+    getSnapshotMediaCount(sessionId),
+    db.$count(swipes, eq(swipes.sessionId, sessionId)),
   ]);
 
-  if (mediaCount === 0 || participants.length === 0) return false;
+  const participantCount = snapshotParticipantCount ?? (await getSessionParticipants(sessionId)).length;
+  const mediaCount = snapshotMediaCount ?? (await db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)));
 
-  const countByUser = new Map(swipeCounts.map((row) => [row.userId, Number(row.total)]));
+  if (mediaCount === 0 || participantCount === 0) return false;
 
-  return participants.every(
-    (userId) => (countByUser.get(userId) ?? 0) >= mediaCount
-  );
+  return totalSwipes >= participantCount * mediaCount;
 }
 
 async function checkAndTransitionSession(sessionId: string) {

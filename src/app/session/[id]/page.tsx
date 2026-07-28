@@ -28,6 +28,7 @@ export default function SessionRoomPage() {
     endSession,
     startSession,
     refetch,
+    refreshMediaPool,
   } = useSession(id);
 
   const [toast, setToast] = useState<{ mediaId: string; title: string } | null>(
@@ -138,7 +139,7 @@ export default function SessionRoomPage() {
               participantCount={session.participantCount}
               joinCode={session.session.joinCode}
               onStart={startSession}
-              onMediaAdded={refetch}
+              onMediaAdded={refreshMediaPool}
             />
           ) : (
             <SessionPhaseView

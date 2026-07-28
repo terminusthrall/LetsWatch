@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { getPosterUrl } from '@/lib/poster';
 import { pairKey, generatePairs } from './pairs';
 
@@ -31,6 +31,7 @@ type PairwiseVoteProps = {
   myVotes: PairwiseVoteRecord[];
   standings: PairwiseStanding[];
   participantCount: number;
+  isHost?: boolean;
   onVoteSubmitted: () => void;
 };
 
@@ -94,6 +95,7 @@ export default function PairwiseVote({
   myVotes,
   standings,
   participantCount,
+  isHost,
   onVoteSubmitted,
 }: PairwiseVoteProps) {
   const [voted, setVoted] = useState<Set<string>>(
@@ -101,6 +103,7 @@ export default function PairwiseVote({
       new Set(myVotes.map((v) => pairKey(v.preferredMediaId, v.opponentMediaId)))
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const allPairs = useMemo(() => generatePairs(items), [items]);
@@ -186,6 +189,33 @@ export default function PairwiseVote({
     }
   };
 
+  const handleFinalize = useCallback(async () => {
+    if (!isHost || isFinalizing) return;
+    setError(null);
+    setIsFinalizing(true);
+    try {
+      const res = await fetch(
+        `/api/sessions/${sessionId}/head-to-head/finalize`,
+        {
+          method: 'POST',
+          credentials: 'same-origin',
+        }
+      );
+
+      const data = (await res.json()) as { error?: string };
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to finalize results');
+      }
+
+      onVoteSubmitted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Finalize failed');
+    } finally {
+      setIsFinalizing(false);
+    }
+  }, [isHost, isFinalizing, sessionId, onVoteSubmitted]);
+
   return (
     <div className="w-full max-w-4xl">
       <div className="mb-6 rounded-2xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
@@ -226,6 +256,17 @@ export default function PairwiseVote({
           )}
         </div>
       </div>
+
+      {isHost && (
+        <button
+          type="button"
+          onClick={handleFinalize}
+          disabled={isFinalizing}
+          className="mb-2 w-full rounded-lg bg-rose-500 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-rose-600 disabled:opacity-60"
+        >
+          {isFinalizing ? 'Finalizing…' : 'Finalize Results'}
+        </button>
+      )}
 
       {currentPair ? (
         <div className="flex flex-col gap-4 md:flex-row md:items-stretch md:gap-6">
