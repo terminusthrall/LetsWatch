@@ -1,41 +1,5 @@
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
-function getApiToken(): string {
-  if (typeof window !== 'undefined') {
-    throw new Error('@/modules/tmdb can only be used on the server');
-  }
-
-  const token = process.env.TMDB_API_KEY;
-  if (!token) {
-    throw new Error('TMDB_API_KEY environment variable is not set');
-  }
-
-  return token;
-}
-
-async function fetchFromTMDB<T>(
-  path: string,
-  params?: URLSearchParams
-): Promise<T> {
-  const token = getApiToken();
-  const query = params ? `?${params.toString()}` : '';
-  const url = `${TMDB_BASE_URL}${path}${query}`;
-
-  const response = await fetch(url, {
-    cache: 'no-store',
-    headers: {
-      accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`TMDB API error: ${response.status} ${response.statusText}`);
-  }
-
-  return response.json();
-}
-
 export interface TMDBMovie {
   id: number;
   title: string;
@@ -72,6 +36,68 @@ export interface SessionMediaRecord {
   overview: string;
   genreIds?: number[];
   voteAverage?: number;
+}
+
+function getApiToken(): string {
+  if (typeof window !== 'undefined') {
+    throw new Error('@/modules/tmdb can only be used on the server');
+  }
+
+  const token = process.env.TMDB_API_KEY;
+  if (!token) {
+    throw new Error('TMDB_API_KEY environment variable is not set');
+  }
+
+  return token;
+}
+
+function isV3ApiKey(token: string): boolean {
+  // v3 API keys are ~32 hex characters. v4 read access tokens are long JWTs.
+  return token.length <= 40;
+}
+
+async function fetchFromTMDB<T>(
+  path: string,
+  params?: URLSearchParams
+): Promise<T> {
+  const token = getApiToken();
+  const searchParams = new URLSearchParams(params);
+  const useV3Key = isV3ApiKey(token);
+
+  if (useV3Key) {
+    searchParams.set('api_key', token);
+  }
+
+  const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+  const url = `${TMDB_BASE_URL}${path}${query}`;
+
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+  };
+  if (!useV3Key) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      headers,
+    });
+
+    if (!response.ok) {
+      console.error(
+        `TMDB API error (key prefix: ${token.slice(0, 4)}, status: ${response.status})`
+      );
+      throw new Error(`TMDB API error: ${response.status} ${response.statusText}`);
+    }
+
+    return response.json();
+  } catch (error) {
+    if (!(error instanceof Error) || !error.message.startsWith('TMDB API error:')) {
+      console.error(`TMDB fetch failed (key prefix: ${token.slice(0, 4)})`, error);
+    }
+    throw error;
+  }
 }
 
 export async function discoverMovies(options: {
