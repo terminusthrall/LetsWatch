@@ -76,6 +76,7 @@ export default function SessionPhaseView({
       <PairwiseVote
         sessionId={sessionId}
         userId={session.userId}
+        isHost={session.userId === session.session.hostId}
         items={matchedItems.map((m) => ({
           id: m.id,
           tmdbId: m.tmdbId,

@@ -135,6 +135,10 @@ export function useSession(sessionId: string) {
     return { ...sessionState, mediaPool: mediaPool ?? [] };
   }, [sessionState, mediaPool]);
 
+  const refreshMediaPool = useCallback(async () => {
+    await fetchMedia();
+  }, [fetchMedia]);
+
   const refetch = useCallback(async () => {
     setIsLoading(true);
     await Promise.all([
@@ -275,6 +279,7 @@ export function useSession(sessionId: string) {
     endSession,
     startSession,
     refetch,
+    refreshMediaPool,
   };
 }
 
