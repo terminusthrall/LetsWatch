@@ -56,8 +56,8 @@ export async function POST(
       return NextResponse.json({ error: 'Session not found' }, { status: 404 });
     }
 
-    if (session.status !== 'LOBBY') {
-      return NextResponse.json({ error: 'Session is no longer accepting new participants' }, { status: 400 });
+    if (session.status !== 'LOBBY' && session.status !== 'SWIPING_ACTIVE') {
+      return NextResponse.json({ error: 'Session is not accepting new participants' }, { status: 400 });
     }
 
     const initialParticipantCount = await getParticipantCount(sessionId);

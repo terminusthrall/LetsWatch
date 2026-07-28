@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid room code' }, { status: 404 });
     }
 
-    if (session.status !== 'SWIPING_ACTIVE') {
+    if (session.status !== 'LOBBY' && session.status !== 'SWIPING_ACTIVE') {
       return NextResponse.json(
         { error: 'Session is not accepting new participants' },
         { status: 400 }
