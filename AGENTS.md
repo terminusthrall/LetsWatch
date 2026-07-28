@@ -69,3 +69,9 @@ Transitions happen in:
 - `src/app/api/sessions/[id]/route.ts` — `GET` lazily resolves `SWIPING_ACTIVE` or `HEAD_TO_HEAD_ACTIVE` when `deadlineAt` has passed.
 
 For implementation details, see `docs/specification.md`.
+
+## Pull Request / Merge Policy
+
+- Do **not** merge pull requests or run any `gh pr merge` / auto-merge command.
+- When a task is complete, push the branch and open a pull request.
+- Provide the PR URL and wait for the user to review and merge it themselves.
