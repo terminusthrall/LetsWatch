@@ -65,7 +65,9 @@ export const addSessionMediaBodySchema = z.object({
   posterPath: z.string().nullable().optional(),
   releaseYear: z.string().optional(),
   overview: z.string().optional(),
-});
+  genreIds: z.array(z.number()).optional(),
+  voteAverage: z.number().optional(),
+}).passthrough();
 
 export type AddSessionMediaBody = z.infer<typeof addSessionMediaBodySchema>;
 

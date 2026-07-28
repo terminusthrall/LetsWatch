@@ -156,7 +156,7 @@ export async function POST(
       const snapshotCount = await getSnapshotParticipantCount(sessionId);
       const participantCount = snapshotCount ?? (await getSessionParticipants(sessionId)).length;
 
-      if (participantCount >= 2 && likeCount >= participantCount) {
+      if (participantCount >= 1 && likeCount >= participantCount) {
         // Acquire evaluation lock to prevent race conditions
         const evaluationToken = await acquireEvaluationLock(sessionId);
 

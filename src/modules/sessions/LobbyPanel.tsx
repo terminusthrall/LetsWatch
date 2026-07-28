@@ -29,6 +29,7 @@ export default function LobbyPanel({
   const [isSearching, setIsSearching] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [addedKeys, setAddedKeys] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -55,8 +56,9 @@ export default function LobbyPanel({
   }, [searchQuery, searchMediaType]);
 
   const handleAdd = async (item: MediaSearchResult) => {
+    const key = `${item.mediaType}-${item.tmdbId}`;
     setError(null);
-    setAddingId(`${item.mediaType}-${item.tmdbId}`);
+    setAddingId(key);
     try {
       const res = await fetch(`/api/sessions/${sessionId}/media`, {
         method: 'POST',
@@ -70,9 +72,8 @@ export default function LobbyPanel({
         throw new Error(data.error || 'Failed to add title');
       }
 
+      setAddedKeys((current) => new Set(current).add(key));
       await onMediaAdded();
-      setSearchQuery('');
-      setSearchResults([]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add title');
     } finally {
@@ -165,40 +166,52 @@ export default function LobbyPanel({
 
         {searchQuery.trim().length > 0 && searchResults.length > 0 && (
           <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
-            {searchResults.map((item) => (
-              <div
-                key={`${item.mediaType}-${item.tmdbId}`}
-                className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-800"
-              >
-                {item.posterPath ? (
-                  <img
-                    src={getPosterUrl(item.posterPath, 'w92') ?? undefined}
-                    alt={item.title}
-                    className="h-16 w-11 rounded-md object-cover"
-                  />
-                ) : (
-                  <div className="flex h-16 w-11 items-center justify-center rounded-md bg-zinc-200 text-xs text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
-                    N/A
-                  </div>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                    {item.title}
-                  </p>
-                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                    {item.releaseYear} · {item.mediaType === 'tv' ? 'TV' : 'Movie'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleAdd(item)}
-                  disabled={addingId === `${item.mediaType}-${item.tmdbId}`}
-                  className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+            {searchResults.map((item) => {
+              const key = `${item.mediaType}-${item.tmdbId}`;
+              const isAdding = addingId === key;
+              const isAdded =
+                addedKeys.has(key) ||
+                mediaPool.some(
+                  (media) =>
+                    media.mediaType === item.mediaType &&
+                    media.tmdbId === item.tmdbId
+                );
+
+              return (
+                <div
+                  key={key}
+                  className="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-2 dark:border-zinc-700 dark:bg-zinc-800"
                 >
-                  {addingId === `${item.mediaType}-${item.tmdbId}` ? '…' : 'Add'}
-                </button>
-              </div>
-            ))}
+                  {item.posterPath ? (
+                    <img
+                      src={getPosterUrl(item.posterPath, 'w92') ?? undefined}
+                      alt={item.title}
+                      className="h-16 w-11 rounded-md object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-16 w-11 items-center justify-center rounded-md bg-zinc-200 text-xs text-zinc-500 dark:bg-zinc-700 dark:text-zinc-400">
+                      N/A
+                    </div>
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                      {item.title}
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                      {item.releaseYear} · {item.mediaType === 'tv' ? 'TV' : 'Movie'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAdd(item)}
+                    disabled={isAdding || isAdded}
+                    className="rounded-lg bg-emerald-500 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-60"
+                  >
+                    {isAdding ? 'Adding…' : isAdded ? '✓ Added' : 'Add'}
+                  </button>
+                </div>
+              );
+            })}
           </div>
         )}
 
