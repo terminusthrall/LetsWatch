@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   type SessionDetailResponse,
   type SessionStateResponse,
@@ -26,6 +26,7 @@ export function useSession(sessionId: string) {
 
   const [joinError, setJoinError] = useState<string | null>(null);
   const [isJoining, setIsJoining] = useState(false);
+  const prevStatusRef = useRef<SessionStateResponse['session']['status'] | null>(null);
 
   const fetchSessionState = useCallback(
     async (options?: { silent?: boolean }): Promise<boolean> => {
@@ -104,13 +105,30 @@ export function useSession(sessionId: string) {
     init();
 
     const interval = setInterval(() => {
-      fetchSessionState({ silent: true });
+      void fetchSessionState({ silent: true });
+      if (sessionState?.session.status === 'LOBBY') {
+        void fetchMedia();
+      }
     }, POLL_INTERVAL_MS);
 
     return () => {
       clearInterval(interval);
     };
-  }, [sessionId, fetchSessionState, fetchMedia]);
+  }, [sessionId, fetchSessionState, fetchMedia, sessionState?.session.status]);
+
+  useEffect(() => {
+    const currentStatus = sessionState?.session.status;
+    if (!currentStatus) return;
+
+    if (
+      prevStatusRef.current === 'LOBBY' &&
+      currentStatus === 'SWIPING_ACTIVE'
+    ) {
+      void fetchMedia();
+    }
+
+    prevStatusRef.current = currentStatus;
+  }, [sessionState?.session.status, fetchMedia]);
 
   const session = useMemo<SessionDetailResponse | null>(() => {
     if (!sessionState) return null;
@@ -119,10 +137,12 @@ export function useSession(sessionId: string) {
 
   const refetch = useCallback(async () => {
     setIsLoading(true);
-    await fetchSessionState({ silent: false });
-    if (mediaPool === null) await fetchMedia();
+    await Promise.all([
+      fetchSessionState({ silent: false }),
+      fetchMedia(),
+    ]);
     setIsLoading(false);
-  }, [fetchSessionState, fetchMedia, mediaPool]);
+  }, [fetchSessionState, fetchMedia]);
 
   const join = useCallback(
     async (displayName: string) => {

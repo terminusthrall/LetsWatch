@@ -9,6 +9,14 @@ import {
   type SessionMediaResponse,
 } from '@/types/api';
 
+function sanitizeOptionalText(
+  value: string | null | undefined,
+  maxLength: number
+): string | null {
+  const sanitized = value?.trim();
+  return sanitized ? sanitized.slice(0, maxLength) : null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -94,9 +102,9 @@ export async function POST(
         tmdbId,
         mediaType,
         title,
-        posterPath: posterPath ?? null,
-        releaseYear: releaseYear ?? null,
-        overview: overview ?? null,
+        posterPath: sanitizeOptionalText(posterPath, 255),
+        releaseYear: sanitizeOptionalText(releaseYear, 10),
+        overview: sanitizeOptionalText(overview, 1000),
         isMatched: false,
       })
       .onConflictDoNothing({
