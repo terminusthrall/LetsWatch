@@ -17,11 +17,11 @@ test.describe('Happy path', () => {
 
     await page.waitForURL(/\/session\/.+/);
 
-    const url = page.url();
-    const sessionId = url.split('/session/')[1];
+    const sessionId = new URL(page.url()).pathname.split('/session/')[1];
+    expect(sessionId).toBeTruthy();
 
     const [, keys] = await redis.scan('0', {
-      match: `test:session*:${sessionId}*`,
+      match: `test:*${sessionId}*`,
       count: 100,
     });
 
