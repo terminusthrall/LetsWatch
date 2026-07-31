@@ -8,14 +8,13 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    # We need these env vars for the app to boot during E2E tests
-    env:
-      DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
-      UPSTASH_REDIS_REST_URL: ${{ secrets.TEST_REDIS_URL }}
-      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.TEST_REDIS_TOKEN }}
-      TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
-      JWT_SECRET: ${{ secrets.JWT_SECRET }}
-
+    # E2E tests (Playwright) are not implemented yet; uncomment the env block and steps below when ready.
+    # env:
+    #   DATABASE_URL: ${{ secrets.TEST_DATABASE_URL }}
+    #   UPSTASH_REDIS_REST_URL: ${{ secrets.TEST_REDIS_URL }}
+    #   UPSTASH_REDIS_REST_TOKEN: ${{ secrets.TEST_REDIS_TOKEN }}
+    #   TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+    #   JWT_SECRET: ${{ secrets.JWT_SECRET }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,9 +27,9 @@ jobs:
       - name: Unit & Integration Tests
         run: npm run test # Vitest
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+      # - name: Install Playwright Browsers
+      #   run: npx playwright install --with-deps
 
-      - name: Run E2E Tests
-        # This starts the app, waits for it to be ready, then runs tests
-        run: npx playwright test
+      # - name: Run E2E Tests
+      #   # This starts the app, waits for it to be ready, then runs tests
+      #   run: npx playwright test
