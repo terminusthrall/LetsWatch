@@ -30,12 +30,18 @@ async function checkAllParticipantsFinished(sessionId: string): Promise<boolean>
     db.$count(swipes, eq(swipes.sessionId, sessionId)),
   ]);
 
-  const participantCount = snapshotParticipantCount ?? (await getSessionParticipants(sessionId)).length;
-  const mediaCount = snapshotMediaCount ?? (await db.$count(sessionMedia, eq(sessionMedia.sessionId, sessionId)));
+  // The snapshot is the single source of truth for the denominator. It is
+  // written once, atomically, when the host starts the session (see
+  // src/app/api/sessions/[id]/start/route.ts) and must never be recomputed
+  // from live participant/media counts here: those can change mid-round
+  // (e.g. a guest joins while swiping is active) and would let the round
+  // complete before every original participant has actually finished, or
+  // never complete at all. If the snapshot hasn't been written yet, the
+  // round cannot possibly be finished.
+  if (snapshotParticipantCount == null || snapshotMediaCount == null) return false;
+  if (snapshotParticipantCount === 0 || snapshotMediaCount === 0) return false;
 
-  if (mediaCount === 0 || participantCount === 0) return false;
-
-  return totalSwipes >= participantCount * mediaCount;
+  return totalSwipes === snapshotParticipantCount * snapshotMediaCount;
 }
 
 async function checkAndTransitionSession(sessionId: string) {

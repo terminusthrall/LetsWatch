@@ -162,7 +162,13 @@ export async function POST(
         .where(eq(sessions.id, sessionId));
     }
 
-    // Upsert: remove any previous vote from this user for the same unordered pair
+    // Upsert: remove any previous vote from this user for the same unordered pair.
+    // Note: the neon-http driver used in src/db/index.ts does not support
+    // db.transaction() (it throws "No transactions support in neon-http
+    // driver"), which was the direct cause of the 500 here. Delete-then-insert
+    // sequentially instead; onConflictDoNothing on the immediately following
+    // insert guards against a concurrent duplicate slipping in between the
+    // delete and the insert.
     const existingVote = await db.query.headToHeadVotes.findFirst({
       where: and(
         eq(headToHeadVotes.sessionId, sessionId),
@@ -180,21 +186,22 @@ export async function POST(
       ),
     });
 
-    await db.transaction(async (tx) => {
-      if (existingVote) {
-        await tx
-          .delete(headToHeadVotes)
-          .where(eq(headToHeadVotes.id, existingVote.id));
-      }
+    if (existingVote) {
+      await db
+        .delete(headToHeadVotes)
+        .where(eq(headToHeadVotes.id, existingVote.id));
+    }
 
-      await tx.insert(headToHeadVotes).values({
+    await db
+      .insert(headToHeadVotes)
+      .values({
         id: crypto.randomUUID(),
         sessionId,
         userId,
         preferredMediaId,
         opponentMediaId,
-      });
-    });
+      })
+      .onConflictDoNothing();
 
     const allVotes = await db.query.headToHeadVotes.findMany({
       where: eq(headToHeadVotes.sessionId, sessionId),
@@ -245,7 +252,11 @@ export async function POST(
       standings,
     });
   } catch (error) {
-    console.error('Error recording head-to-head vote:', error);
+    console.error('Error recording head-to-head vote:', {
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      error,
+    });
     return NextResponse.json(
       { error: 'Failed to record head-to-head vote' },
       { status: 500 }
