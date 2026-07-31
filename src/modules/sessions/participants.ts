@@ -5,13 +5,8 @@ import {
   redis,
   addSessionParticipant as addRedisSessionParticipant,
   getSessionParticipants as getRedisSessionParticipants,
+  getSessionParticipantsKey,
 } from '@/modules/redis';
-
-const PARTICIPANTS_PREFIX = 'session_participants:';
-
-function participantsKey(sessionId: string): string {
-  return `${PARTICIPANTS_PREFIX}${sessionId}`;
-}
 
 export function getSessionRedisTtlSeconds(deadlineAt: Date | string): number {
   const ONE_DAY_SECONDS = 24 * 60 * 60;
@@ -21,7 +16,7 @@ export function getSessionRedisTtlSeconds(deadlineAt: Date | string): number {
 }
 
 export async function getSessionParticipants(sessionId: string): Promise<string[]> {
-  const key = participantsKey(sessionId);
+  const key = getSessionParticipantsKey(sessionId);
 
   // Fast hot-path: if the Redis set exists, return it directly.
   const cached = (await redis.exists(key)) === 1;
