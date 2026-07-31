@@ -5,6 +5,7 @@ import path from 'path';
 // E2E tests run against the local dev server with test-scoped Redis keys.
 dotenv.config({ path: '.env.local' });
 process.env.NODE_ENV = 'test';
+process.env.REDIS_KEY_PREFIX = process.env.REDIS_KEY_PREFIX ?? 'test:';
 
 export default defineConfig({
   testDir: './tests',
@@ -29,6 +30,7 @@ export default defineConfig({
     reuseExistingServer: !process.env.CI,
     env: {
       NODE_ENV: 'test',
+      REDIS_KEY_PREFIX: process.env.REDIS_KEY_PREFIX,
     },
   },
 });

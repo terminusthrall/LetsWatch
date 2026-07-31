@@ -13,7 +13,8 @@ function getRedis(): Redis {
   return redisInstance;
 }
 
-const REDIS_PREFIX = process.env.NODE_ENV === 'test' ? 'test:' : '';
+const REDIS_PREFIX =
+  process.env.REDIS_KEY_PREFIX ?? (process.env.NODE_ENV === 'test' ? 'test:' : '');
 
 const redis = new Proxy({} as Redis, {
   get(_, prop) {
