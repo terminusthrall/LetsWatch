@@ -1,20 +1,20 @@
 import { Redis } from '@upstash/redis';
+import { env } from '@/lib/env';
 
 let redisInstance: Redis | undefined;
 
 function getRedis(): Redis {
   if (redisInstance) return redisInstance;
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (!url || !token) {
-    throw new Error('UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN environment variables are required');
-  }
-
-  redisInstance = new Redis({ url, token });
+  redisInstance = new Redis({
+    url: env.UPSTASH_REDIS_REST_URL,
+    token: env.UPSTASH_REDIS_REST_TOKEN,
+  });
   return redisInstance;
 }
+
+const REDIS_PREFIX =
+  process.env.REDIS_KEY_PREFIX ?? (process.env.NODE_ENV === 'test' ? 'test:' : '');
 
 const redis = new Proxy({} as Redis, {
   get(_, prop) {
@@ -38,11 +38,15 @@ const redis = new Proxy({} as Redis, {
  */
 
 // Session State Engine Keys
-const SESSION_PREFIX = 'session:';
-const SESSION_LOCK_PREFIX = 'session_lock:';
-const SESSION_PARTICIPANTS_PREFIX = 'session_participants:';
-const SESSION_MATCHES_PREFIX = 'session_matches:';
-const SESSION_WINNER_PREFIX = 'session_winner:';
+const SESSION_PREFIX = `${REDIS_PREFIX}session:`;
+const SESSION_LOCK_PREFIX = `${REDIS_PREFIX}session_lock:`;
+const SESSION_PARTICIPANTS_PREFIX = `${REDIS_PREFIX}session_participants:`;
+const SESSION_MATCHES_PREFIX = `${REDIS_PREFIX}session_matches:`;
+const SESSION_WINNER_PREFIX = `${REDIS_PREFIX}session_winner:`;
+
+export function getSessionParticipantsKey(sessionId: string): string {
+  return `${SESSION_PARTICIPANTS_PREFIX}${sessionId}`;
+}
 
 function getSessionMediaLikesKey(sessionId: string, mediaId: string): string {
   return `${SESSION_PREFIX}${sessionId}:media:${mediaId}:likes`;
@@ -354,3 +358,26 @@ export async function clearSessionData(sessionId: string): Promise<void> {
 }
 
 export { redis };
+
+/**
+ * Clear every key prefixed with `test:` from Redis.
+ * Only available in the test environment as a CI safety gate.
+ */
+export async function clearAllTestKeys(): Promise<void> {
+  if (process.env.NODE_ENV !== 'test') {
+    throw new Error('clearAllTestKeys can only be called when NODE_ENV=test');
+  }
+
+  let cursor = '0';
+  do {
+    const [nextCursor, keys] = await redis.scan(cursor, {
+      match: `${REDIS_PREFIX}*`,
+      count: 100,
+    });
+    cursor = nextCursor;
+
+    if (keys.length > 0) {
+      await redis.del(...keys);
+    }
+  } while (cursor !== '0');
+}
