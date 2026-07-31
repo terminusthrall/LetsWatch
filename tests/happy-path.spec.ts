@@ -20,22 +20,31 @@ test.describe('Happy path', () => {
     const sessionId = new URL(page.url()).pathname.split('/session/')[1];
     expect(sessionId).toBeTruthy();
 
-    const keys: string[] = [];
+    const prefixedKeys: string[] = [];
+    const allKeys: string[] = [];
     let cursor = '0';
     do {
       const [nextCursor, batch] = await redis.scan(cursor, {
-        match: `test:*${sessionId}*`,
+        match: `*${sessionId}*`,
         count: 100,
       });
       cursor = nextCursor;
-      keys.push(...batch);
+      allKeys.push(...batch);
     } while (cursor !== '0');
 
-    console.log('Session ID:', sessionId);
-    console.log('Found Redis keys:', keys);
+    for (const key of allKeys) {
+      if (key.startsWith('test:')) {
+        prefixedKeys.push(key);
+      }
+    }
 
-    expect(keys.length).toBeGreaterThan(0);
-    for (const key of keys) {
+    console.log('Session ID:', sessionId);
+    console.log('All Redis keys containing session ID:', allKeys);
+    console.log('Prefixed Redis keys:', prefixedKeys);
+
+    expect(allKeys.length).toBeGreaterThan(0);
+    expect(prefixedKeys.length).toBeGreaterThan(0);
+    for (const key of prefixedKeys) {
       expect(key).toMatch(/^test:/);
     }
   });
