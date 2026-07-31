@@ -20,10 +20,19 @@ test.describe('Happy path', () => {
     const sessionId = new URL(page.url()).pathname.split('/session/')[1];
     expect(sessionId).toBeTruthy();
 
-    const [, keys] = await redis.scan('0', {
-      match: `test:*${sessionId}*`,
-      count: 100,
-    });
+    const keys: string[] = [];
+    let cursor = '0';
+    do {
+      const [nextCursor, batch] = await redis.scan(cursor, {
+        match: `test:*${sessionId}*`,
+        count: 100,
+      });
+      cursor = nextCursor;
+      keys.push(...batch);
+    } while (cursor !== '0');
+
+    console.log('Session ID:', sessionId);
+    console.log('Found Redis keys:', keys);
 
     expect(keys.length).toBeGreaterThan(0);
     for (const key of keys) {
