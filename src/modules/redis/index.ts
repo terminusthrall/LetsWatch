@@ -360,18 +360,22 @@ export async function clearSessionData(sessionId: string): Promise<void> {
 export { redis };
 
 /**
- * Clear every key prefixed with `test:` from Redis.
+ * Delete every key prefixed with `test:` from Redis using SCAN.
  * Only available in the test environment as a CI safety gate.
  */
-export async function clearAllTestKeys(): Promise<void> {
-  if (process.env.NODE_ENV !== 'test') {
-    throw new Error('clearAllTestKeys can only be called when NODE_ENV=test');
+export async function cleanupTestKeys(): Promise<void> {
+  const isTestEnvironment =
+    process.env.NODE_ENV === 'test' || REDIS_PREFIX.startsWith('test');
+  if (!isTestEnvironment) {
+    throw new Error(
+      'cleanupTestKeys can only be called when NODE_ENV=test or REDIS_KEY_PREFIX starts with "test"'
+    );
   }
 
   let cursor = '0';
   do {
     const [nextCursor, keys] = await redis.scan(cursor, {
-      match: `${REDIS_PREFIX}*`,
+      match: 'test:*',
       count: 100,
     });
     cursor = nextCursor;
