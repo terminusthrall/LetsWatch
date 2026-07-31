@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 import dotenv from 'dotenv';
-import path from 'path';
 
 // E2E tests run against the local dev server with test-scoped Redis keys.
 dotenv.config({ path: '.env.local' });
+(process.env as Record<string, string | undefined>).NODE_ENV ??= 'test';
 process.env.REDIS_KEY_PREFIX = process.env.REDIS_KEY_PREFIX ?? 'test:';
 
 export default defineConfig({
